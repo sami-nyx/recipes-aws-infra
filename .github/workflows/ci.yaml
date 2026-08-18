@@ -1,0 +1,37 @@
+name: Terraform Workflow
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  terraform:
+    name: 'Terraform Plan/Apply'
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout your repository code
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # 2. Install Terraform on the runner
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.0" # Specify your desired version here
+
+      # 3. Verify Terraform installation
+      - name: Verify Terraform Version
+        run: terraform --version
+
+      # 4. Initialize Terraform
+      # - name: Terraform Init
+      #   run: terraform init
+      #   working-directory: ./eks-platform-terraform # Adjust to your TF directory
+
+      # # 5. Run Terraform Plan (or Apply)
+      # - name: Terraform Plan
+      #   run: terraform plan
+      #   working-directory: ./eks-platform-terraform

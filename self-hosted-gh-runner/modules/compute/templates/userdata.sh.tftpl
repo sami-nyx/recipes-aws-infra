@@ -1,0 +1,120 @@
+#!/bin/bash
+set -e
+
+# Logging output so you can inspect it in /var/log/user-data.log
+exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+
+# 1. Update and install prerequisites
+dnf update -y || yum update -y
+dnf install -y dnf-plugins-core libicu || yum install -y yum-utils libicu
+
+# 2. Add Docker-CE Repo & Install
+dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo || \
+yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+
+sed -i 's/\$releasever/9/g' /etc/yum.repos.d/docker-ce.repo
+dnf install -y docker-ce docker-ce-cli containerd.io || \
+yum install -y docker-ce docker-ce-cli containerd.io
+
+# 3. Start & Enable Docker
+systemctl start docker
+systemctl enable docker
+usermod -aG docker ec2-user
+
+# 4. Install Docker Compose CLI Plugin & Standalone Binary
+DOCKER_COMPOSE_VERSION="${docker_compose_version}"
+curl -L "https://github.com/docker/compose/releases/download/v$DOCKER_COMPOSE_VERSION/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+chmod +x /usr/local/bin/docker-compose
+ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
+
+mkdir -p /usr/libexec/docker/cli-plugins
+ln -sf /usr/local/bin/docker-compose /usr/libexec/docker/cli-plugins/compose
+
+
+# Dependencies (Ensure jq and aws-cli are available)
+dnf install -y jq awscli || yum install -y jq awscli
+
+# Configuration Variables
+AWS_REGION="${aws_region}"
+REPO_OWNER="${repo_owner}"
+REPO_NAME="${repo_name}"
+SECRET_ID="${secret_id}"
+RUNNER_VERSION="${runner_version}"
+RUNNER_NAME="${runner_name}"
+RUNNER_DIR="/home/ec2-user/actions-runner"
+echo "aws region: $AWS_REGION"
+
+# 1. Fetch GitHub PAT from AWS Secrets Manager
+GITHUB_PAT=$(aws secretsmanager get-secret-value \
+  --secret-id "github/runner-pat" \
+  --query SecretString \
+  --output text \
+  --region "$AWS_REGION")
+
+echo "aws secretsmanager get-secret-value --secret-id github/runner-pat --query SecretString--output text --region $AWS_REGION"
+echo "github_PAT: $GITHUB_PAT" 
+echo "gh repo name: $REPO_NAME"
+echo "gh repo_owner: $REPO_OWNER"
+# 2. Request a fresh Registration Token via GitHub API
+HTTP_RESPONSE=$(curl -s -w "\nHTTP_STATUS:%%{http_code}" -X POST \
+  -H "User-Agent: EC2-Runner-Setup" \
+  -H "Accept: application/vnd.github+json" \
+  -H "Authorization: Bearer $GITHUB_PAT" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/actions/runners/registration-token")
+
+HTTP_STATUS=$(echo "$HTTP_RESPONSE" | grep "HTTP_STATUS" | awk -F':' '{print $2}')
+RAW_BODY=$(echo "$HTTP_RESPONSE" | sed '/HTTP_STATUS/d')
+if [ "$HTTP_STATUS" -ne 201 ]; then
+  echo "ERROR: GitHub API failed with HTTP Status: $HTTP_STATUS"
+  echo "GitHub Response: $RAW_BODY"
+  exit 1
+fi
+
+RUNNER_TOKEN=$(echo "$RAW_BODY" | jq -r .token)
+echo "Successfully acquired runner registration token."
+if [ -z "$RUNNER_TOKEN" ] || [ "$RUNNER_TOKEN" == "null" ]; then
+  echo "ERROR: Failed to acquire GitHub registration token."
+  exit 1
+fi
+
+echo "Successfully acquired dynamic registration token."
+
+echo "==> Downloading and extracting Actions Runner v$RUNNER_VERSION..."
+mkdir -p "$RUNNER_DIR"
+cd "$RUNNER_DIR"
+
+curl -o "actions-runner-linux-x64-$RUNNER_VERSION.tar.gz" \
+-L "https://github.com/actions/runner/releases/download/v$RUNNER_VERSION/actions-runner-linux-x64-$RUNNER_VERSION.tar.gz"
+tar xzf "./actions-runner-linux-x64-$RUNNER_VERSION.tar.gz"
+dnf install -y \
+  dnf-plugins-core \
+  jq \
+  awscli \
+  tar \
+  gzip \
+  libicu \
+  krb5-libs \
+  zlib \
+  openssl-libs
+
+chown -R ec2-user:ec2-user "$RUNNER_DIR"
+# Change ownership after installing dependencies
+# 7. Configure Runner as ec2-user
+echo "==> Configuring runner..."
+
+su - ec2-user -c "cd $RUNNER_DIR && ./config.sh \
+  --url https://github.com/$REPO_OWNER/$REPO_NAME \
+  --token $RUNNER_TOKEN \
+  --name \"$RUNNER_NAME.$RUNNER_VERSION\" \
+  --unattended \
+  --replace"
+
+
+# 8. Install & Start Systemd Service
+echo "==> Starting runner service..."
+cd "$RUNNER_DIR"
+./svc.sh install ec2-user
+./svc.sh start
+
+echo "==> GitHub Runner configured and running successfully!"
