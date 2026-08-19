@@ -1,7 +1,6 @@
 # 1. Create the S3 bucket for Loki chunks
 resource "aws_s3_bucket" "loki_storage" {
   bucket = "recipes-app-loki-logs-${var.environment}"
-depends_on = [ module.loki_irsa_role ]
 }
 
 # 2. Block public access completely
@@ -38,8 +37,10 @@ resource "aws_iam_policy" "loki_s3" {
 }
 
 module "loki_irsa_role" {
-  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts"
-  version = "~> 6.8.0"
+
+  depends_on = [aws_iam_policy.loki_s3]
+  source     = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts"
+  version    = "~> 6.8.0"
 
   name = "loki-s3-role-${var.environment}"
 
