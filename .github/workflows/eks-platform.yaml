@@ -25,5 +25,7 @@ jobs:
           role-to-assume: arn:aws:iam::889867978066:role/github-actions-terraform
           aws-region: ap-south-1 
           disable-retry: true
-
-# 
+      - name: TF plan
+        run: terraform plan
+      # - name: Apply
+      #   run: terraform applly --auto-approve
