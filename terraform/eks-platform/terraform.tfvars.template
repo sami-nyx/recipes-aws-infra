@@ -21,4 +21,4 @@ node_counts = {
 node_type          = "${NODE_TYPE}"
 environment        = "${ENVIRONMENT}"
 principal_arn      = "${PRINCIPAL_ARN}"
-bootstrap_role_arn = ${BOOTSRAP_ARN}
+bootstrap_role_arn = "${BOOTSRAP_ARN}"
