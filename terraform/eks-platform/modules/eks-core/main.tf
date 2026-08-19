@@ -1,6 +1,6 @@
 
 module "eks" {
-  source             = "terraform-aws-modules/eks/aws"
+  source             = "      "
   version            = "~> 21.25.0"
   name               = "${var.owner}-cluster"
   kubernetes_version = "1.36"
@@ -46,7 +46,6 @@ module "eks_blueprints_addons" {
       most_recent = true
     }
   }
-  # enable_metrics_server = true
 }
 
 module "ebs_csi_irsa_role" {
@@ -65,8 +64,14 @@ module "ebs_csi_irsa_role" {
 }
 
 resource "aws_eks_access_entry" "cluster_admin" {
-  cluster_name  = module.eks.cluster_name  # Replace with your EKS cluster resource reference
-  principal_arn = var.principal_arn 
+  cluster_name  = module.eks.cluster_name
+  principal_arn = var.principal_arn
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_entry" "bootstrap_admin" {
+  cluster_name  = module.eks.cluster_name
+  principal_arn = var.bootstrap_role_arn
   type          = "STANDARD"
 }
 
@@ -74,6 +79,15 @@ resource "aws_eks_access_policy_association" "cluster_admin_policy" {
   cluster_name  = module.eks.cluster_name
   policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
   principal_arn = aws_eks_access_entry.cluster_admin.principal_arn
+
+  access_scope {
+    type = "cluster"
+  }
+}
+resource "aws_eks_access_policy_association" "bootstrap_admin_policy" {
+  cluster_name  = module.eks.cluster_name
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  principal_arn = aws_eks_access_entry.bootstrap_admin.principal_arn
 
   access_scope {
     type = "cluster"

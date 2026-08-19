@@ -18,6 +18,7 @@ node_counts = {
   max     = ${NODE_MAX}
 }
 
-node_type   = "${NODE_TYPE}"
-environment = "${ENVIRONMENT}"
-principal_arn="${PRINCIPAL_ARN}"
+node_type          = "${NODE_TYPE}"
+environment        = "${ENVIRONMENT}"
+principal_arn      = "${PRINCIPAL_ARN}"
+bootstrap_role_arn = ${BOOTSRAP_ARN}
