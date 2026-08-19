@@ -146,6 +146,7 @@ jobs:
         with:
           version: latest
       - name: Run bootstrap
+        working-directory: ./gitops/bootstrap
         env:
           CLUSTER_NAME: ${{ needs.tf-apply-eks.outputs.cluster_name }}
           CLUSTER_REGION: ${{ needs.tf-apply-eks.outputs.cluster_region }}
@@ -157,4 +158,4 @@ jobs:
           echo "external_secrets_role_ARN:$EXTERNAL_SECRETS_ROLE_ARN"
           echo "cluster_repo:$GITOPS_REPO_URL"
           tree .
-          ./gitops/bootstrap/bootstrap.sh
+          ./bootstrap.sh
