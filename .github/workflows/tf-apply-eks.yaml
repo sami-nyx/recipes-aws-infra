@@ -10,7 +10,7 @@ on:
 jobs:
   
   tf-aplly-eks:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     environment: staging
     permissions:
       id-token: write  
