@@ -7,18 +7,18 @@ variable "security_group_id" {
 }
 
 variable "instance_type" {
-  type    = string
+  type = string
 }
 
 variable "environment" {
   type = string
 }
 variable "runner_instance_profile_name" {
-  type= string
+  type = string
 }
 variable "aws_region" {
   type = string
-  
+
 }
 variable "repo_owner" {
   type = string

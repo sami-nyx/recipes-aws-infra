@@ -1,6 +1,6 @@
 
 variable "subject_claim_string" {
-  type= string
+  type = string
 }
 
 

@@ -20,7 +20,7 @@ module "compute" {
   runner_instance_profile_name = module.security.runner_instance_profile_name
   aws_region                   = var.aws_region
   repo_owner                   = var.repo_owner
-  repo_name                    = var.repo_name 
+  repo_name                    = var.repo_name
   runner_name                  = var.runner_name
   runner_version               = var.runner_version
   docker_compose_version       = var.docker_compose_version
