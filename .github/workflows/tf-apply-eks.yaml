@@ -62,7 +62,7 @@ jobs:
 
         NODE_TYPE: ${{ vars.NODE_TYPE }}
         ENVIRONMENT: staging
-
+        PRINCIPAL_ARN: ${{ secrets.PRINCIPAL_ARN }}
       run: |
         envsubst < terraform.tfvars.template > terraform.tfvars
     - name: cat terraform.tfvars

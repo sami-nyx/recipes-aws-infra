@@ -20,3 +20,4 @@ node_counts = {
 
 node_type   = "${NODE_TYPE}"
 environment = "${ENVIRONMENT}"
+principal_arn="${PRINCIPAL_ARN}"

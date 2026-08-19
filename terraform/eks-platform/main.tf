@@ -18,6 +18,7 @@ module "eks_core" {
   node_type   = var.node_type
   name_prefix = local.name_prefix
   node_counts = var.node_counts
+  principal_arn = var.principal_arn
 
 }
 module "cluster_roles" {

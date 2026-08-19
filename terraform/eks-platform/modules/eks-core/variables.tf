@@ -27,3 +27,7 @@ variable "node_counts" {
     error_message = "Node count sizing error: Must satisfy 'min <= desired <= max'."
   }
 }
+
+variable "principal_arn" {
+  
+}

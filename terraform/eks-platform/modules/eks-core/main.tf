@@ -63,3 +63,19 @@ module "ebs_csi_irsa_role" {
     }
   }
 }
+
+resource "aws_eks_access_entry" "cluster_admin" {
+  cluster_name  = module.eks.cluster_name  # Replace with your EKS cluster resource reference
+  principal_arn = var.principal_arn 
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "cluster_admin_policy" {
+  cluster_name  = aws_eks.this.name
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  principal_arn = aws_eks_access_entry.cluster_admin.principal_arn
+
+  access_scope {
+    type = "cluster"
+  }
+}

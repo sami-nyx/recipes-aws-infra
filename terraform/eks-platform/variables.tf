@@ -40,3 +40,7 @@ variable "node_counts" {
 variable "environment" {
 
 }
+
+variable "principal_arn" {
+  
+}
