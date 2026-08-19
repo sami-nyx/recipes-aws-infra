@@ -119,6 +119,7 @@ jobs:
     name: Bootstrap Kubernetes Platform
     runs-on: ubuntu-24.04
     needs: tf-apply-eks
+    if: ${{ needs.tf-apply-eks.outputs.eks_created == 'true' }}
     environment: staging
 
     permissions:
