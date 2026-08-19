@@ -4,7 +4,7 @@ on:
   push:
     paths:
       - 'terraform/eks-platform/**'
-
+  workflow_dispatch: 
 jobs:
   
   ci-validate-plan:
@@ -22,7 +22,7 @@ jobs:
       - name: Configure AWS Credentials via OIDC for ECR image push
         uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b #v6.2.0
         with:
-          role-to-assume: arn:aws:iam::889867978066:role/gh-actions-s3-push-role
+          role-to-assume: arn:aws:iam::889867978066:role/github-actions-terraform
           aws-region: ap-south-1 
           disable-retry: true
 
