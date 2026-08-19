@@ -14,9 +14,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/tf-offline-test
-        with:
-          path: ./terraform/eks-platform
+      # - uses: ./.github/actions/tf-offline-test
+      #   with:
+      #     path: ./terraform/eks-platform
 
 
       - name: Configure AWS Credentials via OIDC for ECR image push
@@ -25,7 +25,8 @@ jobs:
           role-to-assume: arn:aws:iam::889867978066:role/github-actions-terraform
           aws-region: ap-south-1 
           disable-retry: true
-      - name: TF plan
+      - name: TF init
+        working-directory: ./terraform/eks-platform
+        run: terraform init
+      - name: Plan
         run: terraform plan
-      # - name: Apply
-      #   run: terraform applly --auto-approve
