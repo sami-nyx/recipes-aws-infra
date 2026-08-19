@@ -157,5 +157,5 @@ jobs:
           echo "cluster_region:$CLUSTER_REGION"
           echo "external_secrets_role_ARN:$EXTERNAL_SECRETS_ROLE_ARN"
           echo "cluster_repo:$GITOPS_REPO_URL"
-          tree .
+          
           ./bootstrap.sh
