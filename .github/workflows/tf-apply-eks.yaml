@@ -36,9 +36,9 @@ jobs:
         aws-region: ap-south-1 
         disable-retry: true
     
-    - name: TF init
-      working-directory: ./terraform/eks-platform
-      run: terraform init
+    # - name: TF init
+    #   working-directory: ./terraform/eks-platform
+    #   run: terraform init
     
     - name: Generate Terraform variables
       working-directory: ./terraform/eks-platform
@@ -67,9 +67,9 @@ jobs:
       working-directory: ./terraform/eks-platform
       run: cat terraform.tfvars
 
-    - name: Terraform Init
-      working-directory: ./terraform/eks-platform
-      run: terraform init -input=false
+    # - name: Terraform Init
+    #   working-directory: ./terraform/eks-platform
+    #   run: terraform init -input=false
 
     - name: Terraform Plan
       working-directory: ./terraform/eks-platform

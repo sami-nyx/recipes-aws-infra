@@ -204,7 +204,8 @@ data "aws_iam_policy_document" "eks_support" {
     actions = [
       "logs:*",
       "kms:*",
-      "ssm:*" #TODO: check if should fine grained
+      "ssm:*", #TODO: check if should fine grained
+      "iam:TagPolicy*"
     ]
 
     resources = ["*"]
