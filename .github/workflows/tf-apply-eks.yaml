@@ -59,7 +59,7 @@ jobs:
         NODE_MAX: ${{ vars.NODE_MAX }}
 
         NODE_TYPE: ${{ vars.NODE_TYPE }}
-        ENVIRONMENT: staging
+        ENVIRONMENT: ${{ job.environment.name }}
 
       run: |
         envsubst < terraform.tfvars.template > terraform.tfvars
@@ -73,4 +73,28 @@ jobs:
 
     - name: Terraform Plan
       working-directory: ./terraform/eks-platform
-      run: terraform plan -input=false
+      run: terraform plan -input=false -out=tfplan
+
+    - name: Convert Terraform plan to JSON
+      working-directory: ./terraform/eks-platform
+      run: terraform show -json tfplan > tfplan.json
+
+    - name: Detect EKS cluster creation
+      id: detect-eks
+      working-directory: ./terraform/eks-platform
+      run: |
+        EKS_CREATED=$(jq -r '
+          [
+            .resource_changes[]?
+            | select(.type == "aws_eks_cluster")
+            | select(.change.actions | index("create"))
+          ] | length
+        ' tfplan.json)
+
+        if [ "$EKS_CREATED" -gt 0 ]; then
+          echo "EKS_CREATED=true" >> "$GITHUB_OUTPUT"
+          echo "EKS cluster will be created."
+        else
+          echo "EKS_CREATED=false" >> "$GITHUB_OUTPUT"
+          echo "No EKS cluster creation detected."
+        fi
