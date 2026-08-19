@@ -136,7 +136,15 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::889867978066:role/github-actions-bootstrap
           aws-region: ${{ needs.tf-apply-eks.outputs.cluster_region }}
-      
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: latest
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: latest
       - name: Run bootstrap
         env:
           CLUSTER_NAME: ${{ needs.tf-apply-eks.outputs.cluster_name }}
@@ -148,4 +156,5 @@ jobs:
           echo "cluster_region:$CLUSTER_REGION"
           echo "external_secrets_role_ARN:$EXTERNAL_SECRETS_ROLE_ARN"
           echo "cluster_repo:$GITOPS_REPO_URL"
+          tree .
           ../gitops/bootsrtap/bootstrap.sh
