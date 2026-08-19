@@ -1,0 +1,23 @@
+name: OIDC Roles Offline Testing
+
+on:
+  push:
+    paths:
+      - 'terraform/self-hosted-runner/**'
+
+jobs:
+  ci-validate-plan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Fmt & Validate
+        working-directory: ./terraform/self-hosted-runner
+        run: |
+          terraform fmt -check
+          terraform init -backend=false
+          terraform validate
