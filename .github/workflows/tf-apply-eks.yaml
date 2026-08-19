@@ -74,7 +74,11 @@ jobs:
     - name: Terraform Plan
       working-directory: ./terraform/eks-platform
       run: terraform plan -input=false -out=tfplan
-
+    
+    - name: Terraform Apply
+      working-directory: ./terraform/eks-platform
+      run: terraform apply -input=false tfplan
+    
     - name: Convert Terraform plan to JSON
       working-directory: ./terraform/eks-platform
       run: terraform show -json tfplan > tfplan.json
