@@ -71,7 +71,7 @@ resource "aws_eks_access_entry" "cluster_admin" {
 }
 
 resource "aws_eks_access_policy_association" "cluster_admin_policy" {
-  cluster_name  = aws_eks.this.name
+  cluster_name  = module.eks.cluster_name
   policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
   principal_arn = aws_eks_access_entry.cluster_admin.principal_arn
 
