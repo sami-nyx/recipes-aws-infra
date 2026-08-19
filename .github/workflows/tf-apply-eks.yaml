@@ -6,6 +6,7 @@ on:
     paths:
       - 'terraform/eks-platform/**'
   workflow_dispatch: 
+  
 jobs:
   
   tf-aplly-eks:
@@ -50,7 +51,7 @@ jobs:
         NODE_MAX: ${{ vars.NODE_MAX }}
 
         NODE_TYPE: ${{ vars.NODE_TYPE }}
-        ENVIRONMENT: ${{ vars.ENVIRONMENT }}
+        ENVIRONMENT: staging
 
       run: |
         envsubst < terraform.tfvars.template > terraform.tfvars
