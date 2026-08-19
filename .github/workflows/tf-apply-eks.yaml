@@ -28,7 +28,7 @@ jobs:
         echo "Workflow:   $GITHUB_WORKFLOW"
         echo "Actor:      $GITHUB_ACTOR"
         echo "Event:      $GITHUB_EVENT_NAME"
-        echo "Environment: ${{ job.environment.name }}"
+        echo "Environment: staging"
     - name: Configure AWS Credentials via OIDC for ECR image push
       uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b #v6.2.0
       with:
