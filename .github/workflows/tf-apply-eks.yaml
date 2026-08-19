@@ -131,7 +131,6 @@ jobs:
           repository: sami-nyx/recipes-gitops
           token: ${{ secrets.RECIPES_GITOPS_PAT }}
           path: gitops
-
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
@@ -143,4 +142,10 @@ jobs:
           CLUSTER_NAME: ${{ needs.tf-apply-eks.outputs.cluster_name }}
           CLUSTER_REGION: ${{ needs.tf-apply-eks.outputs.cluster_region }}
           EXTERNAL_SECRETS_ROLE_ARN: ${{ needs.tf-apply-eks.outputs.external_secrets_role_arn }}
-        run: ../gitops/bootsrtap/bootstrap.sh
+          GITOPS_REPO_URL: "https://github.com/sami-nyx/recipes-gitops.git"
+        run: |
+          echo "cluster_name:$CLUSTER_NAME"
+          echo "cluster_region:$CLUSTER_REGION"
+          echo "external_secrets_role_ARN:$EXTERNAL_SECRETS_ROLE_ARN"
+          echo "cluster_repo:$GITOPS_REPO_URL"
+          ../gitops/bootsrtap/bootstrap.sh
