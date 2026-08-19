@@ -29,4 +29,5 @@ jobs:
         working-directory: ./terraform/eks-platform
         run: terraform init
       - name: Plan
+        working-directory: ./terraform/eks-platform
         run: terraform plan
