@@ -1,0 +1,22 @@
+common_tags = {
+  owner     = "${OWNER}"
+  managedBy = "${MANAGED_BY}"
+  usage     = "${USAGE}"
+  app_name  = "${APP_NAME}"
+}
+
+region = "${REGION}"
+
+vpc_cidrs = "${VPC_CIDRS}"
+
+ha              = ${HA}
+nodes_in_public = ${NODES_IN_PUBLIC}
+
+node_counts = {
+  min     = ${NODE_MIN}
+  desired = ${NODE_DESIRED}
+  max     = ${NODE_MAX}
+}
+
+node_type   = "${NODE_TYPE}"
+environment = "${ENVIRONMENT}"

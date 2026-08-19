@@ -1,0 +1,67 @@
+name: Apply Terraform EKS Cluster
+
+
+on:
+  push:
+    paths:
+      - 'terraform/eks-platform/**'
+  workflow_dispatch: 
+jobs:
+  
+  tf-aplly-eks:
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      id-token: write  
+      contents: write
+    steps:
+    
+    - uses: actions/checkout@v4
+    
+    - uses: hashicorp/setup-terraform@v3
+    
+    - name: Configure AWS Credentials via OIDC for ECR image push
+      uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b #v6.2.0
+      with:
+        role-to-assume: arn:aws:iam::889867978066:role/github-actions-terraform
+        aws-region: ap-south-1 
+        disable-retry: true
+    
+    - name: TF init
+      working-directory: ./terraform/eks-platform
+      run: terraform init
+    
+    - name: Generate Terraform variables
+      working-directory: ./terraform/eks-platform
+      env:
+        OWNER: ${{ vars.OWNER }}
+        MANAGED_BY: ${{ vars.MANAGED_BY }}
+        USAGE: ${{ vars.USAGE }}
+        APP_NAME: ${{ vars.APP_NAME }}
+
+        REGION: ${{ vars.REGION }}
+        VPC_CIDRS: ${{ vars.VPC_CIDRS }}
+
+        HA: ${{ vars.HA }}
+        NODES_IN_PUBLIC: ${{ vars.NODES_IN_PUBLIC }}
+
+        NODE_MIN: ${{ vars.NODE_MIN }}
+        NODE_DESIRED: ${{ vars.NODE_DESIRED }}
+        NODE_MAX: ${{ vars.NODE_MAX }}
+
+        NODE_TYPE: ${{ vars.NODE_TYPE }}
+        ENVIRONMENT: ${{ vars.ENVIRONMENT }}
+
+      run: |
+        envsubst < terraform.tfvars.template > terraform.tfvars
+    - name: cat terraform.tfvars
+      working-directory: ./terraform/eks-platform
+      run: cat terraform.tfvars
+
+    - name: Terraform Init
+      working-directory: ./terraform/eks-platform
+      run: terraform init -input=false
+
+    - name: Terraform Plan
+      working-directory: ./terraform/eks-platform
+      run: terraform plan -input=false
