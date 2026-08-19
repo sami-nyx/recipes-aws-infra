@@ -157,4 +157,4 @@ jobs:
           echo "external_secrets_role_ARN:$EXTERNAL_SECRETS_ROLE_ARN"
           echo "cluster_repo:$GITOPS_REPO_URL"
           tree .
-          ./gitops/bootsrtap/bootstrap.sh
+          ./gitops/bootstrap/bootstrap.sh
