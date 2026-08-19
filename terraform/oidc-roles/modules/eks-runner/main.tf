@@ -205,7 +205,9 @@ data "aws_iam_policy_document" "eks_support" {
       "logs:*",
       "kms:*",
       "ssm:*", #TODO: check if should fine grained
-      "iam:TagPolicy*"
+      "iam:Tag*",
+      "iam:List*",
+      "cloudformation:CreateStack*"
     ]
 
     resources = ["*"]

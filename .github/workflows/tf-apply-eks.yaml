@@ -59,7 +59,7 @@ jobs:
         NODE_MAX: ${{ vars.NODE_MAX }}
 
         NODE_TYPE: ${{ vars.NODE_TYPE }}
-        ENVIRONMENT: ${{ job.environment.name }}
+        ENVIRONMENT: staging
 
       run: |
         envsubst < terraform.tfvars.template > terraform.tfvars
