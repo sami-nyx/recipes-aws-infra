@@ -137,8 +137,7 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::889867978066:role/github-actions-bootstrap
           aws-region: ${{ needs.tf-apply-eks.outputs.cluster_region }}
-      - name: List
-        run: ls
+      
       - name: Run bootstrap
         env:
           CLUSTER_NAME: ${{ needs.tf-apply-eks.outputs.cluster_name }}
