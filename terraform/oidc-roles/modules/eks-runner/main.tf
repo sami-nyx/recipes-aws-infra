@@ -203,7 +203,8 @@ data "aws_iam_policy_document" "eks_support" {
 
     actions = [
       "logs:*",
-      "kms:*"
+      "kms:*",
+      "ssm:*" #TODO: check if should fine grained
     ]
 
     resources = ["*"]
