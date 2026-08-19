@@ -129,7 +129,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: sami-nyx/recipes-gitops
-          token: ${{ secrets.GITOPS_REPO_TOKEN }}
+          token: ${{ secrets.RECIPES_GITOPS_PAT }}
           path: gitops
 
       - name: Configure AWS Credentials
@@ -137,11 +137,11 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::889867978066:role/github-actions-bootstrap
           aws-region: ${{ needs.tf-apply-eks.outputs.cluster_region }}
-
+      - name: List
+        run: ls
       - name: Run bootstrap
-        working-directory: gitops
         env:
           CLUSTER_NAME: ${{ needs.tf-apply-eks.outputs.cluster_name }}
           CLUSTER_REGION: ${{ needs.tf-apply-eks.outputs.cluster_region }}
           EXTERNAL_SECRETS_ROLE_ARN: ${{ needs.tf-apply-eks.outputs.external_secrets_role_arn }}
-        run: ./bootstrap.sh
+        run: ./bootsrtap/bootstrap.sh 
