@@ -9,7 +9,12 @@ on:
   
 jobs:
   
-  tf-aplly-eks:
+  tf-apply-eks:
+    outputs:
+      cluster_name: ${{ steps.terraform-outputs.outputs.cluster_name }}
+      cluster_region: ${{ steps.terraform-outputs.outputs.cluster_region }}
+      external_secrets_role_arn: ${{ steps.terraform-outputs.outputs.external_secrets_role_arn }}
+      eks_created: ${{ steps.terraform-outputs.outputs.EKS_CREATED }}
     runs-on: self-hosted
     environment: staging
     permissions:
@@ -99,3 +104,44 @@ jobs:
           echo "EKS_CREATED=false" >> "$GITHUB_OUTPUT"
           echo "No EKS cluster creation detected."
         fi
+
+    - name: Export bootstrap outputs
+      id: terraform-outputs
+      working-directory: ./terraform/eks-platform
+      run: |
+        {
+          echo "cluster_name=$(terraform output -raw cluster_name)"
+          echo "cluster_region=$(terraform output -raw cluster_region)"
+          echo "external_secrets_role_arn=$(terraform output -raw external_secrets_role_arn)"
+        } >> "$GITHUB_OUTPUT"
+
+  bootstrap-cluster:
+    name: Bootstrap Kubernetes Platform
+    runs-on: ubuntu-24.04
+    needs: tf-apply-eks
+    environment: staging
+
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+
+      - uses: actions/checkout@v4
+        with:
+          repository: sami-nyx/recipes-gitops
+          token: ${{ secrets.GITOPS_REPO_TOKEN }}
+          path: gitops
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::889867978066:role/github-actions-bootstrap
+          aws-region: ${{ needs.tf-apply-eks.outputs.cluster_region }}
+
+      - name: Run bootstrap
+        working-directory: gitops
+        env:
+          CLUSTER_NAME: ${{ needs.tf-apply-eks.outputs.cluster_name }}
+          CLUSTER_REGION: ${{ needs.tf-apply-eks.outputs.cluster_region }}
+          EXTERNAL_SECRETS_ROLE_ARN: ${{ needs.tf-apply-eks.outputs.external_secrets_role_arn }}
+        run: ./bootstrap.sh

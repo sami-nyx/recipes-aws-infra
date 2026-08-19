@@ -1,5 +1,7 @@
 data "aws_caller_identity" "current" {}
+
 data "aws_partition" "current" {}
+
 data "aws_iam_openid_connect_provider" "github" {
   url = "https://token.actions.githubusercontent.com"
 }
@@ -10,8 +12,6 @@ locals {
 
   terraform_state_bucket = "tf-state-bucket-eks-platform-recipes"
   terraform_state_key    = "${var.environment}/terraform.tfstate"
-
-  loki_bucket = "recipes-app-loki-logs-${var.environment}"
 }
 
 # ------------------------------------------------------------------------------
@@ -27,14 +27,20 @@ data "aws_iam_policy_document" "github_actions_assume_role" {
     ]
 
     principals {
-      type        = "Federated"
-      identifiers = [data.aws_iam_openid_connect_provider.github.arn]
+      type = "Federated"
+
+      identifiers = [
+        data.aws_iam_openid_connect_provider.github.arn
+      ]
     }
 
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:aud"
-      values   = ["sts.amazonaws.com"]
+
+      values = [
+        "sts.amazonaws.com"
+      ]
     }
 
     condition {
@@ -42,7 +48,7 @@ data "aws_iam_policy_document" "github_actions_assume_role" {
       variable = "token.actions.githubusercontent.com:sub"
 
       values = [
-        "${var.eks-runner-subject-claim-string}"
+        var.eks-runner-subject-claim-string
       ]
     }
   }
@@ -82,7 +88,7 @@ data "aws_iam_policy_document" "terraform_state" {
 }
 
 # ------------------------------------------------------------------------------
-# 2. VPC / Networking
+# 2. Networking
 # ------------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "networking" {
@@ -114,7 +120,7 @@ data "aws_iam_policy_document" "eks" {
 }
 
 # ------------------------------------------------------------------------------
-# 4. IAM
+# 4. IAM / IRSA
 # ------------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "iam" {
@@ -122,40 +128,21 @@ data "aws_iam_policy_document" "iam" {
     effect = "Allow"
 
     actions = [
-      "iam:GetRole",
-      "iam:GetPolicy",
-      "iam:GetPolicyVersion",
-      "iam:ListRoles",
-      "iam:ListPolicies",
-
-      "iam:CreateRole",
-      "iam:DeleteRole",
-      "iam:UpdateRole",
-      "iam:UpdateAssumeRolePolicy",
-      "iam:TagRole",
-      "iam:UntagRole",
-
-      "iam:CreatePolicy",
-      "iam:DeletePolicy",
-      "iam:CreatePolicyVersion",
-      "iam:DeletePolicyVersion",
-      "iam:SetDefaultPolicyVersion",
-
-      "iam:AttachRolePolicy",
-      "iam:DetachRolePolicy",
-      "iam:PutRolePolicy",
-      "iam:DeleteRolePolicy",
-
-      "iam:CreateOpenIDConnectProvider",
-      "iam:DeleteOpenIDConnectProvider",
-      "iam:GetOpenIDConnectProvider",
-      "iam:UpdateOpenIDConnectProviderThumbprint"
+      "iam:Get*",
+      "iam:List*",
+      "iam:Create*",
+      "iam:Delete*",
+      "iam:Update*",
+      "iam:Put*",
+      "iam:Attach*",
+      "iam:Detach*",
+      "iam:Tag*",
+      "iam:Untag*"
     ]
 
     resources = ["*"]
   }
 
-  # Terraform must be able to give EKS/EC2 the IAM roles it creates.
   statement {
     effect = "Allow"
 
@@ -170,31 +157,23 @@ data "aws_iam_policy_document" "iam" {
 }
 
 # ------------------------------------------------------------------------------
-# 5. Loki S3 Storage
+# 5. S3
 # ------------------------------------------------------------------------------
 
-data "aws_iam_policy_document" "loki_storage" {
+data "aws_iam_policy_document" "s3" {
   statement {
     effect = "Allow"
 
     actions = [
-      "s3:CreateBucket",
-      "s3:DeleteBucket",
-      "s3:GetBucketLocation",
-      "s3:GetBucketPublicAccessBlock",
-      "s3:PutPublicAccessBlock",
-      "s3:GetBucketTagging",
-      "s3:PutBucketTagging"
+      "s3:*"
     ]
 
-    resources = [
-      "arn:${local.partition}:s3:::${local.loki_bucket}"
-    ]
+    resources = ["*"]
   }
 }
 
 # ------------------------------------------------------------------------------
-# 6. Supporting EKS Resources
+# 6. Supporting EKS Services
 # ------------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "eks_support" {
@@ -204,10 +183,8 @@ data "aws_iam_policy_document" "eks_support" {
     actions = [
       "logs:*",
       "kms:*",
-      "ssm:*", #TODO: check if should fine grained
-      "iam:Tag*",
-      "iam:List*",
-      "cloudformation:CreateStack*"
+      "ssm:*",
+      "cloudformation:*"
     ]
 
     resources = ["*"]
@@ -248,9 +225,9 @@ resource "aws_iam_policy" "iam" {
   policy = data.aws_iam_policy_document.iam.json
 }
 
-resource "aws_iam_policy" "loki_storage" {
-  name   = "github-actions-loki-storage"
-  policy = data.aws_iam_policy_document.loki_storage.json
+resource "aws_iam_policy" "s3" {
+  name   = "github-actions-s3"
+  policy = data.aws_iam_policy_document.s3.json
 }
 
 resource "aws_iam_policy" "eks_support" {
@@ -263,7 +240,8 @@ resource "aws_iam_policy" "eks_support" {
 # ------------------------------------------------------------------------------
 
 resource "aws_iam_role" "github_actions_terraform" {
-  name               = "github-actions-terraform"
+  name = "github-actions-terraform"
+
   assume_role_policy = data.aws_iam_policy_document.github_actions_assume_role.json
 
   max_session_duration = 3600
@@ -279,7 +257,7 @@ locals {
     networking      = aws_iam_policy.networking.arn
     eks             = aws_iam_policy.eks.arn
     iam             = aws_iam_policy.iam.arn
-    loki_storage    = aws_iam_policy.loki_storage.arn
+    s3              = aws_iam_policy.s3.arn
     eks_support     = aws_iam_policy.eks_support.arn
   }
 }

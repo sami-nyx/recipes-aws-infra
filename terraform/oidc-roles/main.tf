@@ -17,3 +17,10 @@ module "eks_runner" {
   eks-runner-subject-claim-string = var.eks-runner-subject-claim-string
 
 }
+
+module "cluster_bootstrap" {
+  source                       = "./modules/cluster-bootstrap"
+  cluster_name                 = var.cluster_name
+  region                       = var.region
+  github_actions_subject_claim = var.eks-runner-subject-claim-string
+}
