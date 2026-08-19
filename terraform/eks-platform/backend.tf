@@ -7,7 +7,7 @@ terraform {
       version = "~> 6.60.0"
     }
   }
-
+ 
   backend "s3" {
     bucket = "tf-state-bucket-eks-platform-recipes"
     key    = "staging/terraform.tfstate"

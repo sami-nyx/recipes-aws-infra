@@ -1,0 +1,30 @@
+name: "Terraform Validate"
+description: "Fmt, init, and validate terraform"
+inputs:
+  path:
+    description: "Directory to run validation on"
+    required: true
+runs:
+  using: "composite"
+  
+  steps:
+    - uses: actions/checkout@v4
+    
+    - uses: hashicorp/setup-terraform@v3
+    
+    - name: Terraform Fmt
+      working-directory: ${{ inputs.path }}
+      run:  terraform fmt -check
+      shell: bash
+
+
+    - name: Terraform Init
+      working-directory: ${{ inputs.path }}
+      run:  terraform init -backend=false
+      shell: bash
+
+    - name: Terraform Validate
+      working-directory: ${{ inputs.path }}
+      run:   terraform validate
+      shell: bash
+

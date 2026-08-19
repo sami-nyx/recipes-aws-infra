@@ -15,3 +15,4 @@ module "s3_push_role" {
   role_name             = var.s3_push_role_name
   cloud_front_distro_id = var.cloud_front_distro_id
 }
+ 

@@ -9,15 +9,6 @@ jobs:
   ci-validate-plan:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-      
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
-      - name: Terraform Fmt & Validate
-        working-directory: ./terraform/oidc-roles
-        run: |
-          terraform fmt -check
-          terraform init -backend=false
-          terraform validate
+      - uses: ./.github/actions/tf-offline-test
+        with:
+          path: ./terraform/eks-platform
