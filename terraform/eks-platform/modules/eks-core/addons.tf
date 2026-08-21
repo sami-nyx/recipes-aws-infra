@@ -1,29 +1,29 @@
 resource "aws_eks_addon" "core_dns" {
-  cluster_name = aws_eks_cluster.this.name
-  addon_name   = "coredns"
+  cluster_name                = aws_eks_cluster.this.name
+  addon_name                  = "coredns"
   addon_version               = "v1.14.3-eksbuild.9"
   resolve_conflicts_on_update = "PRESERVE"
 }
 
 resource "aws_eks_addon" "aws_ebs_csi_driver" {
-  cluster_name = aws_eks_cluster.this.name
-  addon_name   = "aws-ebs-csi-driver"
+  cluster_name                = aws_eks_cluster.this.name
+  addon_name                  = "aws-ebs-csi-driver"
   addon_version               = "v1.64.0-eksbuild.1"
-  service_account_role_arn = aws_iam_role.ebs_csi.arn
+  service_account_role_arn    = aws_iam_role.ebs_csi.arn
   resolve_conflicts_on_update = "PRESERVE"
 }
 resource "aws_eks_addon" "kube_proxy" {
-  cluster_name = aws_eks_cluster.this.name
-  addon_name   = "kube-proxy"
+  cluster_name                = aws_eks_cluster.this.name
+  addon_name                  = "kube-proxy"
   addon_version               = "v1.36.0-eksbuild.14"
   resolve_conflicts_on_update = "PRESERVE"
 }
 resource "aws_eks_addon" "vpc_cni" {
-  cluster_name = aws_eks_cluster.this.name
-  addon_name   = "vpc-cni"
+  cluster_name                = aws_eks_cluster.this.name
+  addon_name                  = "vpc-cni"
   addon_version               = "v1.23.0-eksbuild.1"
   resolve_conflicts_on_update = "PRESERVE"
-  
+
 }
 
 

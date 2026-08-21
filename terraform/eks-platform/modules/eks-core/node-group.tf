@@ -10,12 +10,12 @@ resource "aws_eks_node_group" "default" {
   node_role_arn   = aws_iam_role.worker_node_role.arn
   subnet_ids      = var.subnet_ids
   scaling_config {
-    min_size = var.node_counts.min
+    min_size     = var.node_counts.min
     desired_size = var.node_counts.desired
-    max_size = var.node_counts.max
+    max_size     = var.node_counts.max
   }
 
-    depends_on = [
+  depends_on = [
     aws_iam_role_policy_attachment.AmazonEKSWorkerNodePolicy,
     aws_iam_role_policy_attachment.AmazonEKS_CNI_Policy,
     aws_iam_role_policy_attachment.AmazonEC2ContainerRegistryReadOnly,

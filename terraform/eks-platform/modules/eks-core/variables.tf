@@ -35,5 +35,5 @@ variable "bootstrap_role_arn" {
 
 }
 variable "region" {
-  
+
 }

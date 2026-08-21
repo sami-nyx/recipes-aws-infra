@@ -1,18 +1,18 @@
-resource "aws_eks_cluster" "this"{
-    name = "${var.owner}-cluster"
-    version= 1.36    
-    region= var.region
-access_config {
+resource "aws_eks_cluster" "this" {
+  name    = "${var.owner}-cluster"
+  version = 1.36
+  region  = var.region
+  access_config {
     authentication_mode = "API"
   }
 
-    vpc_config {
-      subnet_ids = var.subnet_ids
-    }
-    role_arn = aws_iam_role.cluster_role.arn
+  vpc_config {
+    subnet_ids = var.subnet_ids
+  }
+  role_arn = aws_iam_role.cluster_role.arn
 
 
- 
+
 }
 
 
