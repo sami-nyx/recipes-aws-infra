@@ -34,3 +34,6 @@ variable "principal_arn" {
 variable "bootstrap_role_arn" {
 
 }
+variable "region" {
+  
+}

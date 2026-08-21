@@ -20,6 +20,7 @@ module "eks_core" {
   node_counts        = var.node_counts
   principal_arn      = var.principal_arn
   bootstrap_role_arn = var.bootstrap_role_arn
+  region = var.region
 
 }
 module "cluster_roles" {

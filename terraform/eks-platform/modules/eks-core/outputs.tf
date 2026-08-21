@@ -1,19 +1,17 @@
-# output "cluster_certificate_authority_data" {
-#   value = module.eks.cluster_certificate_authority_data
-# }
+
 output "cluster_endpoint" {
-  value = module.eks.cluster_endpoint
+  value = aws_eks_cluster.this.endpoint
 }
 output "cluster_name" {
-  value = module.eks.cluster_name
+  value = aws_eks_cluster.this.name
 }
 output "oidc_provider_arn" {
-  value = module.eks.oidc_provider_arn
+  value = aws_iam_openid_connect_provider.eks.arn
 }
 
 output "eks_managed_node_group" {
-  value = module.eks.eks_managed_node_groups["main"].node_group_id
+  value = aws_eks_node_group.default.id
 }
 output "ebs_csi_irsa_role_name" {
-  value = module.ebs_csi_irsa_role.name
+  value = aws_iam_role.ebs_csi.name
 }
