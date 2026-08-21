@@ -1,16 +1,3 @@
-
-variable "region" {
-
-}
-variable "cluster_name" {
-
-}
-variable "name_prefix" {
-  type = string
-}
-variable "oidc_provider_arn" {
-
-}
 variable "region" {
   type        = string
   description = "The AWS region where secrets manager resources are located and policies are applied."
