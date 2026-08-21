@@ -15,7 +15,7 @@ jobs:
       cluster_region: ${{ steps.terraform-outputs.outputs.cluster_region }}
       external_secrets_role_arn: ${{ steps.terraform-outputs.outputs.external_secrets_role_arn }}
       eks_created: ${{ steps.detect-eks.outputs.EKS_CREATED }}
-    runs-on: self-hosted
+    runs-on: ubuntu-22.04
     environment: staging
     permissions:
       id-token: write  
