@@ -26,24 +26,6 @@ resource "aws_eks_addon" "vpc_cni" {
 
 }
 
-
-
-# module "ebs_csi_irsa_role" {
-#   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts"
-#   version = "~> 6.8.0"
-
-#   name                  = "${var.name_prefix}-ebs-csi"
-#   attach_ebs_csi_policy = true
-
-#   oidc_providers = {
-#     ex = {
-#         provider_arn             = aws_iam_openid_connect_provider.eks.arn
-#       namespace_service_accounts = ["kube-system:ebs-csi-controller-sa"]
-#     }
-#   }
-# }
-
-
 data "tls_certificate" "eks" {
   url = aws_eks_cluster.this.identity[0].oidc[0].issuer
 }

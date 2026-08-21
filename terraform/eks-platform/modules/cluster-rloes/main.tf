@@ -52,28 +52,3 @@ module "external_secrets_irsa_role" {
     }
   }
 }
-
-# # --------------------------------------------------------------------------------------------------
-# # Fetch Existing GitHub Actions IAM Role (Fails if role does not exist in AWS)
-# # --------------------------------------------------------------------------------------------------
-# data "aws_iam_role" "github_actions" {
-#   name = "gh-actions-eks-update-kube-config-role"
-# }
-# # --------------------------------------------------------------------------------------------------
-# # EKS Access Entry for GitHub Actions Runner
-# # --------------------------------------------------------------------------------------------------
-# resource "aws_eks_access_entry" "github_actions" {
-#   cluster_name  = var.cluster_name # Updated to reference your cluster name
-#   principal_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/gh-actions-eks-update-kube-config-role"
-#   type          = "STANDARD"
-# }
-
-# resource "aws_eks_access_policy_association" "github_actions" {
-#   cluster_name  = var.cluster_name
-#   policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
-#   principal_arn = aws_eks_access_entry.github_actions.principal_arn
-
-#   access_scope {
-#     type = "cluster"
-#   }
-# }
