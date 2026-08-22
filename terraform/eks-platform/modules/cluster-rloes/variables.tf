@@ -17,9 +17,3 @@ variable "oidc_provider_arn" {
   type        = string
   description = "The Amazon Resource Name (ARN) of the IAM OIDC provider used for IRSA integration."
 }
-
-variable "db_master_user_secret_arn" {
-  type        = string
-  description = "ARN of the Secrets Manager secret containing the RDS master credentials"
-  
- }
