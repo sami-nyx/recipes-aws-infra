@@ -13,6 +13,7 @@ locals {
 resource "aws_vpc" "this" {
   cidr_block           = var.vpc_cidrs
   enable_dns_hostnames = true
+   enable_dns_support   = true
   tags = {
     Name = "${var.name_prefix}-VPC"
   }
@@ -42,7 +43,6 @@ resource "aws_route_table" "public_rt" {
 
 
 resource "aws_route_table" "private_rt" {
-  count  = var.nodes_in_public ? 0 : 1
   vpc_id = aws_vpc.this.id
   tags = {
     Name = "${var.name_prefix}-private-rt"
@@ -63,7 +63,7 @@ resource "aws_subnet" "public_subnets" {
 }
 
 resource "aws_subnet" "private_subnets" {
-  count             = var.nodes_in_public ? 0 : local.subnets_count
+  count             = local.subnets_count
   vpc_id            = aws_vpc.this.id
   cidr_block        = cidrsubnet(var.vpc_cidrs, 8, (count.index * 2) + 1)
   availability_zone = data.aws_availability_zones.available.names[count.index % length(data.aws_availability_zones.available.names)]
@@ -82,9 +82,9 @@ resource "aws_route_table_association" "public_rt_association" {
 }
 
 resource "aws_route_table_association" "private_rt_association" {
-  count          = var.nodes_in_public ? 0 : local.subnets_count
+  count          =  local.subnets_count
   subnet_id      = aws_subnet.private_subnets[count.index].id
-  route_table_id = aws_route_table.private_rt[0].id
+  route_table_id = aws_route_table.private_rt.id
 }
 
 #=========================================== NAT Gateway (Optional) ======================================
@@ -108,7 +108,7 @@ resource "aws_nat_gateway" "this" {
 
 resource "aws_route" "private_nat_gateway" {
   count                  = var.nodes_in_public ? 0 : 1
-  route_table_id         = aws_route_table.private_rt[0].id
+  route_table_id         = aws_route_table.private_rt.id
   destination_cidr_block = "0.0.0.0/0"
   nat_gateway_id         = aws_nat_gateway.this[0].id
 }

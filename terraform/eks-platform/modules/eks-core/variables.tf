@@ -3,10 +3,7 @@ variable "owner" {
   description = "The owner or team name used as a prefix for naming the EKS cluster."
 }
 
-variable "subnet_ids" {
-  type        = list(string)
-  description = "List of subnet IDs where the EKS cluster and worker nodes will be deployed."
-}
+
 
 variable "vpc_id" {
   type        = string
@@ -50,4 +47,15 @@ variable "bootstrap_role_arn" {
 variable "region" {
   type        = string
   description = "The AWS region where the EKS cluster and its resources will be created."
+}
+
+variable "nodes_in_public" {
+  type = bool
+}
+variable "public_subnet_ids" {
+
+}
+
+variable "private_subnet_ids" {
+
 }

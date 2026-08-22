@@ -20,7 +20,7 @@ resource "aws_iam_policy" "external_secrets_policy" {
           "arn:aws:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:prod/recipes/api-keys-*",
           "arn:aws:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:godaddy-api-credentials*",
           "arn:aws:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:recipes-gitops-pat*",
-
+          var.db_master_user_secret_arn
 
         ]
       }

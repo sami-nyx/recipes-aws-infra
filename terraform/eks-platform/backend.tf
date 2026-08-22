@@ -9,8 +9,6 @@ terraform {
   }
 
 
-
-
   backend "s3" {
     bucket = "tf-state-bucket-eks-platform-recipes"
     key    = "staging/terraform.tfstate"
