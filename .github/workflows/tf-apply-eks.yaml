@@ -1,144 +1,142 @@
 name: Apply Terraform EKS Cluster
 
-
 on:
-  push:
-    paths:
-      - 'terraform/eks-platform/**'
-  workflow_dispatch: 
-  
+  workflow_dispatch:
+
+concurrency:
+  group: staging-terraform-apply
+  cancel-in-progress: false
+
 jobs:
-  
-  tf-apply-eks:
-    outputs:
-      cluster_name: ${{ steps.terraform-outputs.outputs.cluster_name }}
-      cluster_region: ${{ steps.terraform-outputs.outputs.cluster_region }}
-      external_secrets_role_arn: ${{ steps.terraform-outputs.outputs.external_secrets_role_arn }}
-      eks_created: ${{ steps.detect-eks.outputs.EKS_CREATED }}
+
+  notify-start:
+    name: Notify Slack - Start
     runs-on: ubuntu-22.04
     environment: staging
+
     permissions:
-      id-token: write  
-      contents: write
+      contents: read
+
     steps:
-    
-    - uses: actions/checkout@v4
-    
-    - uses: hashicorp/setup-terraform@v3
-    - name: Debug GitHub OIDC context
-      run: |
-        echo "Repository: $GITHUB_REPOSITORY"
-        echo "Ref:        $GITHUB_REF"
-        echo "Branch:     $GITHUB_REF_NAME"
-        echo "Workflow:   $GITHUB_WORKFLOW"
-        echo "Actor:      $GITHUB_ACTOR"
-        echo "Event:      $GITHUB_EVENT_NAME"
-        echo "Environment: staging"
-    - name: Configure AWS Credentials via OIDC for ECR image push
-      uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b #v6.2.0
-      with:
-        role-to-assume: arn:aws:iam::889867978066:role/github-actions-terraform
-        aws-region: ap-south-1 
-        disable-retry: true
-    
-    
-    - name: Generate Terraform variables
-      working-directory: ./terraform/eks-platform
-      env:
-        OWNER: ${{ vars.OWNER }}
-        MANAGED_BY: ${{ vars.MANAGED_BY }}
-        USAGE: ${{ vars.USAGE }}
-        APP_NAME: ${{ vars.APP_NAME }}
-
-        REGION: ${{ vars.REGION }}
-        VPC_CIDRS: ${{ vars.VPC_CIDRS }}
-
-        HA: ${{ vars.HA }}
-        NODES_IN_PUBLIC: ${{ vars.NODES_IN_PUBLIC }}
-
-        NODE_MIN: ${{ vars.NODE_MIN }}
-        NODE_DESIRED: ${{ vars.NODE_DESIRED }}
-        NODE_MAX: ${{ vars.NODE_MAX }}
-
-        NODE_TYPE: ${{ vars.NODE_TYPE }}
-        ENVIRONMENT: staging
-        PRINCIPAL_ARN: ${{ secrets.PRINCIPAL_ARN }}
-        BOOTSTRAP_ARN: ${{ secrets.BOOTSTRAP_ARN }}
-      run: |
-        envsubst < terraform.tfvars.template > terraform.tfvars
-    - name: cat terraform.tfvars
-      working-directory: ./terraform/eks-platform
-      run: cat terraform.tfvars
-
-    - name: Terraform Init
-      working-directory: ./terraform/eks-platform
-      run: terraform init -input=false
-
-    - name: Terraform Plan
-      working-directory: ./terraform/eks-platform
-      run: terraform plan -input=false -out=tfplan
-    
-    - name: Terraform Apply
-      working-directory: ./terraform/eks-platform
-      run: terraform apply -input=false tfplan
-    
-    - name: Convert Terraform plan to JSON
-      working-directory: ./terraform/eks-platform
-      run: terraform show -json tfplan > tfplan.json
-
-    - name: Detect EKS cluster creation
-      id: detect-eks
-      working-directory: ./terraform/eks-platform
-      run: |
-        EKS_CREATED=$(jq -r '
-          [
-            .resource_changes[]?
-            | select(.type == "aws_eks_cluster")
-            | select(.change.actions | index("create"))
-          ] | length
-        ' tfplan.json)
-
-        if [ "$EKS_CREATED" -gt 0 ]; then
-          echo "EKS_CREATED=true" >> "$GITHUB_OUTPUT"
-          echo "EKS cluster will be created."
-        else
-          echo "EKS_CREATED=false" >> "$GITHUB_OUTPUT"
-          echo "No EKS cluster creation detected."
-        fi
-
-    - name: Export bootstrap outputs
-      id: terraform-outputs
-      working-directory: ./terraform/eks-platform
-      run: |
-        {
-          echo "cluster_name=$(terraform output -raw cluster_name)"
-          echo "cluster_region=$(terraform output -raw cluster_region)"
-          echo "external_secrets_role_arn=$(terraform output -raw external_secrets_role_arn)"
-        } >> "$GITHUB_OUTPUT"
-
-  bootstrap-cluster:
-    name: Bootstrap Kubernetes Platform
-    runs-on: ubuntu-24.04
-    needs: tf-apply-eks
-    # if: ${{ needs.tf-apply-eks.outputs.eks_created == 'true' }}
+      - name: Send start notification
+        uses: slackapi/slack-github-action@v3.0.3
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: ":rocket: *Staging infrastructure deployment started*"
+            blocks:
+              - type: "section"
+                text:
+                  type: "mrkdwn"
+                  text: ":rocket: *Staging infrastructure deployment started*\n*Repository:* `${{ github.repository }}`\n*Branch:* `${{ github.ref_name }}`\n*Actor:* `${{ github.actor }}`\n*Run:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View GitHub Actions>"
+  terraform-apply:
+    name: Terraform Apply
+    runs-on: ubuntu-22.04
     environment: staging
 
     permissions:
       id-token: write
       contents: read
+
+    outputs:
+      cluster_name: ${{ steps.terraform-outputs.outputs.cluster_name }}
+      cluster_region: ${{ steps.terraform-outputs.outputs.cluster_region }}
+      external_secrets_role_arn: ${{ steps.terraform-outputs.outputs.external_secrets_role_arn }}
+
     steps:
-      - name: I Cluster Created
-        run: echo "${{ needs.tf-apply-eks.outputs.eks_created }}"
-      - uses: actions/checkout@v4
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b
+        with:
+          role-to-assume: arn:aws:iam::889867978066:role/github-actions-terraform
+          aws-region: ap-south-1
+          disable-retry: true
+
+      - name: Generate Terraform variables
+        working-directory: ./terraform/eks-platform
+        env:
+          OWNER: ${{ vars.OWNER }}
+          MANAGED_BY: ${{ vars.MANAGED_BY }}
+          USAGE: ${{ vars.USAGE }}
+          APP_NAME: ${{ vars.APP_NAME }}
+
+          REGION: ${{ vars.REGION }}
+          VPC_CIDRS: ${{ vars.VPC_CIDRS }}
+
+          HA: ${{ vars.HA }}
+          NODES_IN_PUBLIC: ${{ vars.NODES_IN_PUBLIC }}
+
+          NODE_MIN: ${{ vars.NODE_MIN }}
+          NODE_DESIRED: ${{ vars.NODE_DESIRED }}
+          NODE_MAX: ${{ vars.NODE_MAX }}
+
+          NODE_TYPE: ${{ vars.NODE_TYPE }}
+          ENVIRONMENT: staging
+
+          PRINCIPAL_ARN: ${{ secrets.PRINCIPAL_ARN }}
+          BOOTSTRAP_ARN: ${{ secrets.BOOTSTRAP_ARN }}
+
+        run: |
+          envsubst < terraform.tfvars.template > terraform.tfvars
+
+      - name: Terraform Init
+        working-directory: ./terraform/eks-platform
+        run: terraform init -input=false
+
+      - name: Terraform Validate
+        working-directory: ./terraform/eks-platform
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: ./terraform/eks-platform
+        run: terraform plan -input=false -out=tfplan
+
+      - name: Terraform Apply
+        working-directory: ./terraform/eks-platform
+        run: terraform apply -input=false tfplan
+
+      - name: Export Terraform outputs
+        id: terraform-outputs
+        working-directory: ./terraform/eks-platform
+        run: |
+          {
+            echo "cluster_name=$(terraform output -raw cluster_name)"
+            echo "cluster_region=$(terraform output -raw cluster_region)"
+            echo "external_secrets_role_arn=$(terraform output -raw external_secrets_role_arn)"
+          } >> "$GITHUB_OUTPUT"
+
+  bootstrap-cluster:
+    name: Bootstrap Kubernetes Platform
+    runs-on: ubuntu-24.04
+    needs: terraform-apply
+    environment: staging
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+
+      - name: Checkout GitOps repository
+        uses: actions/checkout@v4
         with:
           repository: sami-nyx/recipes-gitops
           token: ${{ secrets.RECIPES_GITOPS_PAT }}
           path: gitops
-      - name: Configure AWS Credentials
+
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::889867978066:role/github-actions-bootstrap
-          aws-region: ${{ needs.tf-apply-eks.outputs.cluster_region }}
+          aws-region: ${{ needs.terraform-apply.outputs.cluster_region }}
+
       - name: Setup kubectl
         uses: azure/setup-kubectl@v4
         with:
@@ -148,17 +146,64 @@ jobs:
         uses: azure/setup-helm@v4
         with:
           version: latest
-      - name: Run bootstrap
+
+      - name: Bootstrap cluster
         working-directory: ./gitops/bootstrap
         env:
-          CLUSTER_NAME: ${{ needs.tf-apply-eks.outputs.cluster_name }}
-          CLUSTER_REGION: ${{ needs.tf-apply-eks.outputs.cluster_region }}
-          EXTERNAL_SECRETS_ROLE_ARN: ${{ needs.tf-apply-eks.outputs.external_secrets_role_arn }}
-          GITOPS_REPO_URL: "https://github.com/sami-nyx/recipes-gitops.git"
-        run: |
-          echo "cluster_name:$CLUSTER_NAME"
-          echo "cluster_region:$CLUSTER_REGION"
-          echo "external_secrets_role_ARN:$EXTERNAL_SECRETS_ROLE_ARN"
-          echo "cluster_repo:$GITOPS_REPO_URL"
-          
-          ./bootstrap.sh
+          CLUSTER_NAME: ${{ needs.terraform-apply.outputs.cluster_name }}
+          CLUSTER_REGION: ${{ needs.terraform-apply.outputs.cluster_region }}
+          EXTERNAL_SECRETS_ROLE_ARN: ${{ needs.terraform-apply.outputs.external_secrets_role_arn }}
+          GITOPS_REPO_URL: https://github.com/sami-nyx/recipes-gitops.git
+        run: ./bootstrap.sh
+
+  notify-success:
+    name: Notify Slack - Success
+    runs-on: ubuntu-22.04
+    needs:
+      - terraform-apply
+      - bootstrap-cluster
+    if: ${{ success() }}
+    environment: staging
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Send success notification
+        uses: slackapi/slack-github-action@v3.0.3
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: ":white_check_mark: *Staging infrastructure deployment succeeded*"
+            blocks:
+              - type: "section"
+                text:
+                  type: "mrkdwn"
+                  text: ":white_check_mark: *Staging infrastructure deployment succeeded*\n*Repository:* `${{ github.repository }}`\n*Branch:* `${{ github.ref_name }}`\n*Cluster:* `${{ needs.terraform-apply.outputs.cluster_name }}`\n*Region:* `${{ needs.terraform-apply.outputs.cluster_region }}`\n*Run:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View GitHub Actions>"
+
+  notify-failure:
+    name: Notify Slack - Failure
+    runs-on: ubuntu-22.04
+    needs:
+      - terraform-apply
+      - bootstrap-cluster
+    if: ${{ failure() }}
+    environment: staging
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Send failure notification
+        uses: slackapi/slack-github-action@v3.0.3
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: ":x: *Staging infrastructure deployment failed*"
+            blocks:
+              - type: "section"
+                text:
+                  type: "mrkdwn"
+                  text: ":x: *Staging infrastructure deployment failed*\n*Repository:* `${{ github.repository }}`\n*Branch:* `${{ github.ref_name }}`\n*Run:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View GitHub Actions>"
