@@ -22,7 +22,3 @@ output "ebs_csi_irsa_role_name" {
   value       = aws_iam_role.ebs_csi.name
   description = "The name of the IAM role used by the EBS CSI driver via IRSA (IAM Roles for Service Accounts)."
 }
-
-output "node_sg_id" {
-  value = aws_security_group.node_sg.id
-}
