@@ -1,19 +1,24 @@
 name: EKS Platform Offline Testing
-
 on:
   push:
-    paths:
+    branches:
+      - "**"
+
+  pull_request:
+    branches:
+      - main
       - 'terraform/eks-platform/**'
-  workflow_dispatch: 
 jobs:
   
   ci-validate-plan:
+    # This job only runs terraform fmt/init/validate against local files -
+    # it never assumes an AWS role or writes to the repo, so it doesn't
+    # need id-token or contents:write.
     permissions:
-      id-token: write  
-      contents: write
+      contents: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: ./.github/actions/tf-offline-test
         with:
           path: ./terraform/eks-platform

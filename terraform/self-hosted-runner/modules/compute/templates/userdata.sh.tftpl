@@ -52,8 +52,6 @@ GITHUB_PAT=$(aws secretsmanager get-secret-value \
   --output text \
   --region "$AWS_REGION")
 
-echo "aws secretsmanager get-secret-value --secret-id github/runner-pat --query SecretString--output text --region $AWS_REGION"
-echo "github_PAT: $GITHUB_PAT" 
 echo "gh repo name: $REPO_NAME"
 echo "gh repo_owner: $REPO_OWNER"
 # 2. Request a fresh Registration Token via GitHub API

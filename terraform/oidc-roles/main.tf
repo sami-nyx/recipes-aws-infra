@@ -15,7 +15,8 @@ module "eks_runner" {
   source                          = "./modules/eks-runner"
   environment                     = var.environment
   eks-runner-subject-claim-string = var.eks-runner-subject-claim-string
-
+  region                          = var.region
+  cluster_name                    = var.cluster_name
 }
 
 module "cluster_bootstrap" {

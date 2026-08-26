@@ -32,30 +32,10 @@ module "loki_storege" {
   environment       = var.environment
   oidc_provider_arn = module.eks_core.oidc_provider_arn
 }
-
-module "rds" {
-  source = "./modules/rds"
-
-  private_subnet_ids = module.network.privete_subnet_ids
-  vpc_id             = module.network.vpc_id
-  node_sg_id         = module.eks_core.node_sg_id
-
-  db_engine                  = var.db_engine
-  db_engine_version          = var.db_engine_version
-  db_allocated_storage       = var.db_allocated_storage
-  db_name                    = var.db_name
-  db_instance_class           = var.db_instance_class
-  db_username                 = var.db_username
-  db_skip_final_snapshot     = var.db_skip_final_snapshot
-  db_backup_retention_period = var.db_backup_retention_period
-  db_deletion_protection     = var.db_deletion_protection
-}
-
 module "cluster_roles" {
   source            = "./modules/cluster-rloes"
   region            = var.region
   cluster_name      = module.eks_core.cluster_name
   name_prefix       = local.name_prefix
   oidc_provider_arn = module.eks_core.oidc_provider_arn
-  db_master_user_secret_arn = module.rds.db_master_user_secret_arn
 }
