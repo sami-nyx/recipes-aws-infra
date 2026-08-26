@@ -10,8 +10,9 @@ terraform {
 
 
   backend "s3" {
-    bucket = "tf-state-bucket-eks-platform-recipes"
-    key    = "staging/terraform.tfstate"
-    region = "ap-south-1"
+    bucket       = "tf-state-bucket-eks-platform-recipes"
+    key          = "staging/terraform.tfstate"
+    region       = "ap-south-1"
+    use_lockfile = true
   }
 }

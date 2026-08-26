@@ -12,6 +12,11 @@ locals {
 
   terraform_state_bucket = "tf-state-bucket-eks-platform-recipes"
   terraform_state_key    = "${var.environment}/terraform.tfstate"
+
+  # Matches the bucket name pattern from modules/loki-storage
+  # ("recipes-app-loki-logs-${environment}") - the only bucket this
+  # stack's Terraform run actually needs to manage.
+  loki_bucket_pattern = "recipes-app-loki-logs-*"
 }
 
 # ------------------------------------------------------------------------------
@@ -90,13 +95,75 @@ data "aws_iam_policy_document" "terraform_state" {
 # ------------------------------------------------------------------------------
 # 2. Networking
 # ------------------------------------------------------------------------------
-
+# NOTE: this used to be a blanket "ec2:*" on "*". The action list below is
+# scoped to what modules/network + the EKS node group actually call, but
+# Resource has to stay "*" - most EC2 write APIs (CreateVpc, CreateSubnet,
+# security-group rule changes, etc.) don't support resource-level IAM
+# conditions. If a future `terraform apply` here fails with AccessDenied for
+# another ec2:* action, add that specific action - don't fall back to "ec2:*".
 data "aws_iam_policy_document" "networking" {
   statement {
     effect = "Allow"
 
     actions = [
-      "ec2:*"
+      # VPC
+      "ec2:CreateVpc",
+      "ec2:DeleteVpc",
+      "ec2:DescribeVpcs",
+      "ec2:DescribeVpcAttribute",
+      "ec2:ModifyVpcAttribute",
+      # Subnets
+      "ec2:CreateSubnet",
+      "ec2:DeleteSubnet",
+      "ec2:DescribeSubnets",
+      "ec2:ModifySubnetAttribute",
+      # Internet Gateway
+      "ec2:CreateInternetGateway",
+      "ec2:DeleteInternetGateway",
+      "ec2:AttachInternetGateway",
+      "ec2:DetachInternetGateway",
+      "ec2:DescribeInternetGateways",
+      # Route tables / routes
+      "ec2:CreateRouteTable",
+      "ec2:DeleteRouteTable",
+      "ec2:DescribeRouteTables",
+      "ec2:CreateRoute",
+      "ec2:DeleteRoute",
+      "ec2:ReplaceRoute",
+      "ec2:AssociateRouteTable",
+      "ec2:DisassociateRouteTable",
+      "ec2:ReplaceRouteTableAssociation",
+      # EIP / NAT gateway
+      "ec2:AllocateAddress",
+      "ec2:ReleaseAddress",
+      "ec2:DescribeAddresses",
+      "ec2:DescribeAddressesAttribute",
+      "ec2:CreateNatGateway",
+      "ec2:DeleteNatGateway",
+      "ec2:DescribeNatGateways",
+      # Security groups (EKS creates/manages these for the cluster + node group)
+      "ec2:CreateSecurityGroup",
+      "ec2:DeleteSecurityGroup",
+      "ec2:DescribeSecurityGroups",
+      "ec2:DescribeSecurityGroupRules",
+      "ec2:AuthorizeSecurityGroupIngress",
+      "ec2:AuthorizeSecurityGroupEgress",
+      "ec2:RevokeSecurityGroupIngress",
+      "ec2:RevokeSecurityGroupEgress",
+      # Launch templates (EKS managed node groups own one per node group)
+      "ec2:CreateLaunchTemplate",
+      "ec2:DeleteLaunchTemplate",
+      "ec2:CreateLaunchTemplateVersion",
+      "ec2:DescribeLaunchTemplates",
+      "ec2:DescribeLaunchTemplateVersions",
+      # Read-only / tagging needed throughout
+      "ec2:DescribeAvailabilityZones",
+      "ec2:DescribeAccountAttributes",
+      "ec2:DescribeInstanceTypes",
+      "ec2:DescribeInstances",
+      "ec2:DescribeTags",
+      "ec2:CreateTags",
+      "ec2:DeleteTags",
     ]
 
     resources = ["*"]
@@ -106,6 +173,7 @@ data "aws_iam_policy_document" "networking" {
 # ------------------------------------------------------------------------------
 # 3. EKS
 # ------------------------------------------------------------------------------
+# Scoped to this one cluster instead of every cluster in the account.
 
 data "aws_iam_policy_document" "eks" {
   statement {
@@ -115,6 +183,24 @@ data "aws_iam_policy_document" "eks" {
       "eks:*"
     ]
 
+    resources = [
+      "arn:${local.partition}:eks:${var.region}:${local.account_id}:cluster/${var.cluster_name}",
+      "arn:${local.partition}:eks:${var.region}:${local.account_id}:nodegroup/${var.cluster_name}/*/*",
+      "arn:${local.partition}:eks:${var.region}:${local.account_id}:addon/${var.cluster_name}/*/*",
+      "arn:${local.partition}:eks:${var.region}:${local.account_id}:access-entry/${var.cluster_name}/*",
+    ]
+  }
+
+  # A handful of EKS read calls (list/describe-available-versions style)
+  # aren't tied to a specific cluster ARN and require Resource "*".
+  statement {
+    effect = "Allow"
+
+    actions = [
+      "eks:ListClusters",
+      "eks:DescribeAddonVersions",
+    ]
+
     resources = ["*"]
   }
 }
@@ -122,25 +208,64 @@ data "aws_iam_policy_document" "eks" {
 # ------------------------------------------------------------------------------
 # 4. IAM / IRSA
 # ------------------------------------------------------------------------------
+# NOTE: this is narrower than the old "iam:Create*/Delete*/Update*/Put*
+# /Attach*/Detach*" wildcard, but Resource is still "role/*" and "policy/*"
+# account-wide - IAM doesn't let you scope CreateRole to a not-yet-existing
+# role name. That means this role can still create a new role and attach an
+# AWS-managed policy to it (a privilege-escalation path). Closing that fully
+# needs a permissions-boundary condition on iam:CreateRole shared with the
+# eks-platform stack - flagged as a follow-up, not done here.
 
 data "aws_iam_policy_document" "iam" {
   statement {
     effect = "Allow"
 
     actions = [
-      "iam:Get*",
-      "iam:List*",
-      "iam:Create*",
-      "iam:Delete*",
-      "iam:Update*",
-      "iam:Put*",
-      "iam:Attach*",
-      "iam:Detach*",
-      "iam:Tag*",
-      "iam:Untag*"
+      "iam:GetRole",
+      "iam:GetRolePolicy",
+      "iam:ListRolePolicies",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListInstanceProfilesForRole",
+      "iam:CreateRole",
+      "iam:DeleteRole",
+      "iam:UpdateRole",
+      "iam:UpdateAssumeRolePolicy",
+      "iam:TagRole",
+      "iam:UntagRole",
+      "iam:AttachRolePolicy",
+      "iam:DetachRolePolicy",
+      "iam:GetPolicy",
+      "iam:GetPolicyVersion",
+      "iam:ListPolicyVersions",
+      "iam:CreatePolicy",
+      "iam:DeletePolicy",
+      "iam:CreatePolicyVersion",
+      "iam:DeletePolicyVersion",
+      "iam:TagPolicy",
+      "iam:UntagPolicy",
     ]
 
-    resources = ["*"]
+    resources = [
+      "arn:${local.partition}:iam::${local.account_id}:role/*",
+      "arn:${local.partition}:iam::${local.account_id}:policy/*",
+    ]
+  }
+
+  statement {
+    effect = "Allow"
+
+    actions = [
+      "iam:GetOpenIDConnectProvider",
+      "iam:CreateOpenIDConnectProvider",
+      "iam:DeleteOpenIDConnectProvider",
+      "iam:UpdateOpenIDConnectProviderThumbprint",
+      "iam:TagOpenIDConnectProvider",
+      "iam:UntagOpenIDConnectProvider",
+    ]
+
+    resources = [
+      "arn:${local.partition}:iam::${local.account_id}:oidc-provider/*",
+    ]
   }
 
   statement {
@@ -159,35 +284,115 @@ data "aws_iam_policy_document" "iam" {
 # ------------------------------------------------------------------------------
 # 5. S3
 # ------------------------------------------------------------------------------
+# NOTE: this used to be "s3:*" on every bucket in the account. This stack
+# only ever manages the Loki storage bucket - scope to that.
 
 data "aws_iam_policy_document" "s3" {
   statement {
     effect = "Allow"
 
     actions = [
-      "s3:*"
+      "s3:CreateBucket",
+      "s3:DeleteBucket",
+      "s3:GetBucketPolicy",
+      "s3:PutBucketPolicy",
+      "s3:GetBucketPublicAccessBlock",
+      "s3:PutBucketPublicAccessBlock",
+      "s3:GetEncryptionConfiguration",
+      "s3:PutEncryptionConfiguration",
+      "s3:GetLifecycleConfiguration",
+      "s3:PutLifecycleConfiguration",
+      "s3:GetBucketTagging",
+      "s3:PutBucketTagging",
+      "s3:ListBucket",
     ]
 
-    resources = ["*"]
+    resources = [
+      "arn:${local.partition}:s3:::${local.loki_bucket_pattern}",
+    ]
+  }
+
+  statement {
+    effect = "Allow"
+
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+    ]
+
+    resources = [
+      "arn:${local.partition}:s3:::${local.loki_bucket_pattern}/*",
+    ]
   }
 }
 
 # ------------------------------------------------------------------------------
 # 6. Supporting EKS Services
 # ------------------------------------------------------------------------------
+# Dropped "cloudformation:*" entirely - nothing in this repo creates
+# CloudFormation stacks.
 
 data "aws_iam_policy_document" "eks_support" {
+  # CloudWatch log group for EKS control-plane logging, scoped to this
+  # cluster's log group.
   statement {
     effect = "Allow"
 
     actions = [
-      "logs:*",
-      "kms:*",
-      "ssm:*",
-      "cloudformation:*"
+      "logs:CreateLogGroup",
+      "logs:DeleteLogGroup",
+      "logs:DescribeLogGroups",
+      "logs:PutRetentionPolicy",
+      "logs:TagResource",
+      "logs:UntagResource",
+      "logs:ListTagsForResource",
+    ]
+
+    resources = [
+      "arn:${local.partition}:logs:${var.region}:${local.account_id}:log-group:/aws/eks/${var.cluster_name}*",
+      "arn:${local.partition}:logs:${var.region}:${local.account_id}:log-group:/aws/eks/${var.cluster_name}*:*",
+    ]
+  }
+
+  # KMS for the EKS secrets-encryption key. CreateKey/CreateAlias/ListAliases
+  # don't support resource-level restriction, so Resource has to be "*" here
+  # - that's an AWS API limitation, not a choice.
+  statement {
+    effect = "Allow"
+
+    actions = [
+      "kms:CreateKey",
+      "kms:CreateAlias",
+      "kms:DeleteAlias",
+      "kms:ListAliases",
+      "kms:DescribeKey",
+      "kms:EnableKeyRotation",
+      "kms:PutKeyPolicy",
+      "kms:GetKeyPolicy",
+      "kms:TagResource",
+      "kms:ScheduleKeyDeletion",
+      "kms:CreateGrant",
+      "kms:ListGrants",
+      "kms:RevokeGrant",
     ]
 
     resources = ["*"]
+  }
+
+  # SSM parameter EKS publishes the recommended worker-node AMI release
+  # version under - owned by AWS, not this account.
+  statement {
+    effect = "Allow"
+
+    actions = [
+      "ssm:GetParameter",
+      "ssm:GetParameters",
+    ]
+
+    resources = [
+      "arn:${local.partition}:ssm:${var.region}::parameter/aws/service/eks/*",
+    ]
   }
 
   statement {
@@ -198,6 +403,18 @@ data "aws_iam_policy_document" "eks_support" {
     ]
 
     resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:AWSServiceName"
+
+      values = [
+        "eks.amazonaws.com",
+        "eks-nodegroup.amazonaws.com",
+        "eks-fargate.amazonaws.com",
+        "elasticloadbalancing.amazonaws.com",
+      ]
+    }
   }
 }
 

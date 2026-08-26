@@ -36,8 +36,12 @@ resource "aws_iam_role_policy_attachment" "cluster_AmazonEKSClusterPolicy" {
 # EKS Cluster
 # ==============================================================================
 
+locals {
+  cluster_name = "${var.owner}-cluster"
+}
+
 resource "aws_eks_cluster" "this" {
-  name    = "${var.owner}-cluster"
+  name    = local.cluster_name
   version = "1.36"
   region  = var.region
 
@@ -58,7 +62,17 @@ resource "aws_eks_cluster" "this" {
     )
   }
 
+  encryption_config {
+    resources = ["secrets"]
+    provider {
+      key_arn = aws_kms_key.eks_secrets.arn
+    }
+  }
+
+  enabled_cluster_log_types = ["api", "audit", "authenticator"]
+
   depends_on = [
-    aws_iam_role_policy_attachment.cluster_AmazonEKSClusterPolicy
+    aws_iam_role_policy_attachment.cluster_AmazonEKSClusterPolicy,
+    aws_cloudwatch_log_group.eks_cluster,
   ]
 }

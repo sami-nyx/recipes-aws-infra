@@ -2,6 +2,12 @@ name: Apply Terraform EKS Cluster
 
 on:
   workflow_dispatch:
+    inputs:
+      confirm_rebootstrap:
+        description: "Cluster is already bootstrapped and I intentionally want to re-run bootstrap.sh against it"
+        type: boolean
+        required: false
+        default: false
 
 concurrency:
   group: staging-terraform-apply
@@ -19,7 +25,7 @@ jobs:
 
     steps:
       - name: Send start notification
-        uses: slackapi/slack-github-action@v3.0.3
+        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c # v3.0.3
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook
@@ -47,13 +53,13 @@ jobs:
     steps:
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b
+        uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b # v6.2.0
         with:
           role-to-assume: arn:aws:iam::889867978066:role/github-actions-terraform
           aws-region: ap-south-1
@@ -125,25 +131,25 @@ jobs:
     steps:
 
       - name: Checkout GitOps repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: sami-nyx/recipes-gitops
           token: ${{ secrets.RECIPES_GITOPS_PAT }}
           path: gitops
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@451ce2a72e8d729a59ebeaacab82dbce58e7af4c # v6
         with:
           role-to-assume: arn:aws:iam::889867978066:role/github-actions-bootstrap
           aws-region: ${{ needs.terraform-apply.outputs.cluster_region }}
 
       - name: Setup kubectl
-        uses: azure/setup-kubectl@v4
+        uses: azure/setup-kubectl@c0c8b32d33a5244f1e5947304550403b63930415 # v4
         with:
           version: latest
 
       - name: Setup Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@bf6a7d304bc2fdb57e0331155b7ebf2c504acf0a # v4
         with:
           version: latest
 
@@ -154,6 +160,7 @@ jobs:
           CLUSTER_REGION: ${{ needs.terraform-apply.outputs.cluster_region }}
           EXTERNAL_SECRETS_ROLE_ARN: ${{ needs.terraform-apply.outputs.external_secrets_role_arn }}
           GITOPS_REPO_URL: https://github.com/sami-nyx/recipes-gitops.git
+          CONFIRM_REBOOTSTRAP: ${{ github.event.inputs.confirm_rebootstrap }}
         run: ./bootstrap.sh
 
   notify-success:
@@ -170,7 +177,7 @@ jobs:
 
     steps:
       - name: Send success notification
-        uses: slackapi/slack-github-action@v3.0.3
+        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c # v3.0.3
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook
@@ -196,7 +203,7 @@ jobs:
 
     steps:
       - name: Send failure notification
-        uses: slackapi/slack-github-action@v3.0.3
+        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c # v3.0.3
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook

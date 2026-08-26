@@ -1,0 +1,272 @@
+name: Destroy EKS Cluster
+
+# Tears the staging cluster and everything Terraform created for it down to
+# nothing. This is deliberately workflow_dispatch-only and gated behind a
+# typed confirmation - there is no trigger that can fire this by accident.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_cluster_name:
+        description: "Type the exact value of the CLUSTER_NAME repo/environment variable to confirm you want to permanently destroy that cluster"
+        required: true
+
+concurrency:
+  # Shares the apply workflow's group so a destroy can never race an apply
+  # (or another destroy) against the same state.
+  group: staging-terraform-apply
+  cancel-in-progress: false
+
+jobs:
+
+  notify-start:
+    name: Notify Slack - Start
+    runs-on: ubuntu-22.04
+    environment: staging
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Send start notification
+        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c # v3.0.3
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: ":warning: *Staging infrastructure DESTROY started*"
+            blocks:
+              - type: "section"
+                text:
+                  type: "mrkdwn"
+                  text: ":warning: *Staging infrastructure DESTROY started*\n*Repository:* `${{ github.repository }}`\n*Branch:* `${{ github.ref_name }}`\n*Actor:* `${{ github.actor }}`\n*Run:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View GitHub Actions>"
+
+  drain-cluster:
+    name: Remove Argo CD Applications & Load Balancers
+    runs-on: ubuntu-24.04
+    environment: staging
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+
+      - name: Confirm destroy
+        run: |
+          if [ "${{ github.event.inputs.confirm_cluster_name }}" != "${{ vars.CLUSTER_NAME }}" ]; then
+            echo "::error::Confirmation input did not match the CLUSTER_NAME variable ('${{ vars.CLUSTER_NAME }}'). Aborting - nothing was touched."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@451ce2a72e8d729a59ebeaacab82dbce58e7af4c # v6
+        with:
+          role-to-assume: arn:aws:iam::889867978066:role/github-actions-bootstrap
+          aws-region: ${{ vars.REGION }}
+
+      - name: Check whether the cluster still exists
+        id: check-cluster
+        run: |
+          if aws eks describe-cluster --name "${{ vars.CLUSTER_NAME }}" --region "${{ vars.REGION }}" >/dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Cluster '${{ vars.CLUSTER_NAME }}' not found in ${{ vars.REGION }} - skipping Kubernetes cleanup and going straight to terraform destroy."
+          fi
+
+      - name: Setup kubectl
+        if: steps.check-cluster.outputs.found == 'true'
+        uses: azure/setup-kubectl@c0c8b32d33a5244f1e5947304550403b63930415 # v4
+        with:
+          version: latest
+
+      - name: Update kubeconfig
+        if: steps.check-cluster.outputs.found == 'true'
+        run: aws eks update-kubeconfig --region "${{ vars.REGION }}" --name "${{ vars.CLUSTER_NAME }}"
+
+      - name: Remove all Argo CD Applications (cascading to their resources)
+        if: steps.check-cluster.outputs.found == 'true'
+        run: |
+          set -euo pipefail
+
+          if ! kubectl get namespace argocd >/dev/null 2>&1 || \
+             ! kubectl get crd applications.argoproj.io >/dev/null 2>&1; then
+            echo "No argocd namespace / Application CRD found - nothing to clean up."
+            exit 0
+          fi
+
+          mapfile -t apps < <(kubectl get applications.argoproj.io -n argocd -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep -v '^$' || true)
+
+          if [ "${#apps[@]}" -eq 0 ]; then
+            echo "No Argo CD Applications found."
+            exit 0
+          fi
+
+          echo "Found ${#apps[@]} Argo CD Application(s): ${apps[*]}"
+
+          # 1. Disable automated sync/self-heal on every app first. Otherwise,
+          #    in an app-of-apps setup, deleting a child Application while its
+          #    parent is still auto-syncing just gets it recreated from git.
+          for app in "${apps[@]}"; do
+            kubectl patch application "$app" -n argocd --type=json \
+              -p='[{"op":"remove","path":"/spec/syncPolicy/automated"}]' 2>/dev/null || true
+          done
+
+          # 2. Make sure every app actually cascades to the real Kubernetes
+          #    resources it deployed (Deployments, Services, Ingresses, and -
+          #    critically - any LoadBalancer Service/Ingress) when deleted,
+          #    instead of just removing the Application object itself.
+          for app in "${apps[@]}"; do
+            kubectl patch application "$app" -n argocd --type merge \
+              -p '{"metadata":{"finalizers":["resources-finalizer.argocd.argoproj.io"]}}'
+          done
+
+          # 3. Delete everything and wait for the cascade (and the AWS load
+          #    balancer controller tearing down the actual ELB/NLB + ENIs
+          #    behind any LoadBalancer Service/Ingress) to finish. This has
+          #    to happen before terraform destroy - otherwise a load balancer
+          #    still sitting in the VPC will block subnet/security-group
+          #    deletion.
+          kubectl delete applications.argoproj.io --all -n argocd --wait=true --timeout=10m
+
+      - name: Delete any remaining LoadBalancer-backed resources
+        if: steps.check-cluster.outputs.found == 'true'
+        run: |
+          set -euo pipefail
+          echo "Checking for leftover LoadBalancer Services..."
+          leftover_svc=$(kubectl get svc --all-namespaces -o json \
+            | jq -r '.items[] | select(.spec.type=="LoadBalancer") | "\(.metadata.namespace) \(.metadata.name)"')
+
+          if [ -n "$leftover_svc" ]; then
+            echo "$leftover_svc" | while read -r ns name; do
+              echo "Deleting leftover LoadBalancer Service $ns/$name"
+              kubectl delete svc "$name" -n "$ns" --wait=true --timeout=5m
+            done
+          else
+            echo "None found."
+          fi
+
+          echo "Checking for leftover Ingress resources..."
+          leftover_ing=$(kubectl get ingress --all-namespaces -o json \
+            | jq -r '.items[] | "\(.metadata.namespace) \(.metadata.name)"')
+
+          if [ -n "$leftover_ing" ]; then
+            echo "$leftover_ing" | while read -r ns name; do
+              echo "Deleting leftover Ingress $ns/$name"
+              kubectl delete ingress "$name" -n "$ns" --wait=true --timeout=5m
+            done
+          else
+            echo "None found."
+          fi
+
+  terraform-destroy:
+    name: Terraform Destroy
+    runs-on: ubuntu-22.04
+    needs: drain-cluster
+    environment: staging
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b # v6.2.0
+        with:
+          role-to-assume: arn:aws:iam::889867978066:role/github-actions-terraform
+          aws-region: ap-south-1
+          disable-retry: true
+
+      - name: Generate Terraform variables
+        working-directory: ./terraform/eks-platform
+        env:
+          OWNER: ${{ vars.OWNER }}
+          MANAGED_BY: ${{ vars.MANAGED_BY }}
+          USAGE: ${{ vars.USAGE }}
+          APP_NAME: ${{ vars.APP_NAME }}
+
+          REGION: ${{ vars.REGION }}
+          VPC_CIDRS: ${{ vars.VPC_CIDRS }}
+
+          HA: ${{ vars.HA }}
+          NODES_IN_PUBLIC: ${{ vars.NODES_IN_PUBLIC }}
+
+          NODE_MIN: ${{ vars.NODE_MIN }}
+          NODE_DESIRED: ${{ vars.NODE_DESIRED }}
+          NODE_MAX: ${{ vars.NODE_MAX }}
+
+          NODE_TYPE: ${{ vars.NODE_TYPE }}
+          ENVIRONMENT: staging
+
+          PRINCIPAL_ARN: ${{ secrets.PRINCIPAL_ARN }}
+          BOOTSTRAP_ARN: ${{ secrets.BOOTSTRAP_ARN }}
+
+        run: |
+          envsubst < terraform.tfvars.template > terraform.tfvars
+
+      - name: Terraform Init
+        working-directory: ./terraform/eks-platform
+        run: terraform init -input=false
+
+      - name: Terraform Destroy
+        working-directory: ./terraform/eks-platform
+        run: terraform destroy -input=false -auto-approve
+
+  notify-success:
+    name: Notify Slack - Success
+    runs-on: ubuntu-22.04
+    needs:
+      - drain-cluster
+      - terraform-destroy
+    if: ${{ success() }}
+    environment: staging
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Send success notification
+        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c # v3.0.3
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: ":white_check_mark: *Staging infrastructure destroyed*"
+            blocks:
+              - type: "section"
+                text:
+                  type: "mrkdwn"
+                  text: ":white_check_mark: *Staging infrastructure destroyed*\n*Repository:* `${{ github.repository }}`\n*Branch:* `${{ github.ref_name }}`\n*Cluster:* `${{ vars.CLUSTER_NAME }}`\n*Run:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View GitHub Actions>"
+
+  notify-failure:
+    name: Notify Slack - Failure
+    runs-on: ubuntu-22.04
+    needs:
+      - drain-cluster
+      - terraform-destroy
+    if: ${{ failure() }}
+    environment: staging
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Send failure notification
+        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c # v3.0.3
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: ":x: *Staging infrastructure destroy FAILED*"
+            blocks:
+              - type: "section"
+                text:
+                  type: "mrkdwn"
+                  text: ":x: *Staging infrastructure destroy FAILED*\n*Repository:* `${{ github.repository }}`\n*Branch:* `${{ github.ref_name }}`\n*Run:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View GitHub Actions>"
