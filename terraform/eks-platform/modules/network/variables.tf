@@ -14,7 +14,7 @@ variable "ha" {
   description = "High Availabilty Redundancy"
   validation {
     condition     = var.ha >= 2 && var.ha <= 3
-    error_message = "The ha variable must be greater or equl to 2 and less or equal to 3."
+    error_message = "The ha variable must be greater than or equal to 2 and less or equal to 3."
   }
 }
 

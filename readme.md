@@ -1,25 +1,69 @@
 # recipes-aws-infra
 
-Terraform + GitHub Actions for the AWS infrastructure behind the `recipes` project: an EKS cluster (the app platform), the OIDC/IAM roles GitHub Actions assumes to manage it, and a standalone self-hosted CI runner.
+Terraform + GitHub Actions for the AWS infrastructure behind the `recipes` project: the VPC and EKS cluster the application platform runs on, and the OIDC/IAM roles GitHub Actions assumes to manage all of it — no long-lived AWS credentials anywhere in CI.
 
-The actual Kubernetes-side GitOps config (Argo CD Applications, Helm charts, manifests) lives in a separate repo: [`recipes-gitops`](https://github.com/sami-nyx/recipes-gitops), applied by `bootstrap.sh` after the cluster comes up.
+The actual Kubernetes-side GitOps config (Argo CD Applications, Helm charts, manifests) lives in a separate repo: [`recipes-gitops`](https://github.com/sami-nyx/recipes-gitops), applied by `bootstrap.sh` after the cluster comes up. The application itself lives in [`recipes`](https://github.com/sami-nyx/protfolio-recipes).
+
+## Architecture
+
+```text
+                              GitHub Actions (OIDC, no static AWS keys)
+                                          │
+                    ┌─────────────────────┼─────────────────────┐
+                    │                     │                     │
+                    ▼                     ▼                     ▼
+          role: github-actions-   role: github-actions-   per-repo push roles
+          terraform (applies      bootstrap (runs         (ECR / S3 / CloudFront -
+          eks-platform)           bootstrap.sh)            see recipes' own infra)
+                    │                     │
+                    ▼                     ▼
+     ┌──────────────────────────────────────────────────────┐
+     │                     AWS Account                       │
+     │                                                        │
+     │   ┌────────────────────────────────────────────────┐   │
+     │   │                     VPC                         │   │
+     │   │                                                  │   │
+     │   │   Public Subnet(s)         Private Subnet(s)      │   │
+     │   │   (per AZ, count = ha)     (only when              │   │
+     │   │                             nodes_in_public=false, │   │
+     │   │                             routed via NAT)         │   │
+     │   │        │                        │                   │   │
+     │   │        └───────────┬────────────┘                   │   │
+     │   │                    ▼                                │   │
+     │   │            EKS Cluster (control plane)               │   │
+     │   │                    │                                 │   │
+     │   │                    ▼                                 │   │
+     │   │        Managed Node Group (EC2, node_type/            │   │
+     │   │        node_counts - min/desired/max)                  │   │
+     │   │                    │                                   │   │
+     │   │        coredns · kube-proxy · vpc-cni ·                 │   │
+     │   │        aws-ebs-csi-driver (IRSA)                         │   │
+     │   └────────────────────────────────────────────────────────┘   │
+     │                                                                  │
+     │   S3: Loki log storage (IRSA-scoped)                             │
+     │   S3: Terraform state (one bucket per stack, native locking)      │
+     │   IAM: EKS Access Entries (API auth mode - no aws-auth ConfigMap)  │
+     └──────────────────────────────────────────────────────────────────┘
+                    │
+                    ▼
+     bootstrap.sh → External Secrets Operator + Argo CD →
+     reconciles recipes-gitops (separate repo)
+```
 
 ## Layout
 
-```
+```text
 terraform/
-  eks-platform/       # The EKS cluster itself: VPC, subnets, node group, IRSA roles, Loki S3 bucket
-  oidc-roles/         # IAM roles GitHub Actions assumes via OIDC (no long-lived AWS keys in CI)
-  self-hosted-runner/ # One EC2 instance running a self-hosted GitHub Actions runner
+  eks-platform/  # The EKS cluster itself: VPC, subnets, node group, IRSA roles, Loki S3 bucket
+  oidc-roles/    # IAM roles GitHub Actions assumes via OIDC (no long-lived AWS keys in CI)
 
 .github/
   workflows/
-    tf-apply-eks.yaml       # workflow_dispatch: terraform apply -> bootstrap the cluster via recipes-gitops
-    destroy-cluster.yaml    # workflow_dispatch: tear the cluster + its Argo CD apps down, then terraform destroy
-    eks-platform.yaml       # CI: fmt/init/validate on push + PR touching terraform/eks-platform
-    oidc-roles.yaml         # CI: same, for terraform/oidc-roles
-    self-hosted-runner.yaml # CI: same, for terraform/self-hosted-runner
-  actions/tf-offline-test/  # Composite action shared by the three CI workflows above
+    tf-apply-eks.yaml    # workflow_dispatch: terraform apply -> bootstrap the cluster via recipes-gitops
+    destroy-cluster.yaml # workflow_dispatch: drain Argo CD + load balancers, then terraform destroy
+    eks-platform.yaml    # CI: fmt/init/validate on push, and on PRs touching terraform/eks-platform/**
+    oidc-roles.yaml      # CI: same, for terraform/oidc-roles/**
+  actions/tf-offline-test/ # Composite action shared by both CI-validation workflows above
 ```
 
 ## Terraform stacks
@@ -28,17 +72,30 @@ Each stack is independent: its own S3 backend, its own state file, applied separ
 
 | Stack | Backend bucket | What it creates |
 |---|---|---|
-| `eks-platform` | `tf-state-bucket-eks-platform-recipes` | VPC/subnets (public-only or public+private+NAT, via `nodes_in_public`), the EKS cluster and managed node group, IRSA roles for External Secrets/EBS CSI/Loki, the Loki S3 bucket |
+| `eks-platform` | `tf-state-bucket-eks-platform-recipes` | VPC/subnets (public-only or public+private+NAT, via `nodes_in_public`), the EKS cluster and managed node group, EKS Access Entries, IRSA roles for the EBS CSI driver and Loki, the Loki S3 bucket |
 | `oidc-roles` | `tf-state-bucket-gh-actions-oidc-roles` | The GitHub Actions OIDC provider trust + IAM roles: `github-actions-terraform` (applies `eks-platform`), `github-actions-bootstrap` (runs `bootstrap.sh` against the cluster), plus per-repo push roles for ECR/S3/CloudFront |
-| `self-hosted-runner` | `tf-state-bucket-self-hosted-runner-protfolio` | A standalone EC2 instance registered as a self-hosted GitHub Actions runner |
 
 Each stack's `terraform.tfvars` is generated at CI time from `terraform.tfvars.template` via `envsubst`, populated from the GitHub variables/secrets listed below — it's never committed (see `.gitignore`).
+
+### Why custom modules instead of an off-the-shelf one
+
+`eks-platform` doesn't wrap a published community module (e.g. `terraform-aws-modules/eks/aws`) — the VPC, the EKS cluster, the node group, IAM roles, and access entries are all hand-written resources under `modules/network` and `modules/eks-core`. That was a deliberate choice to demonstrate module design directly rather than configuring someone else's abstraction — the trade-off is more code to own, in exchange for full visibility into exactly what every resource does and why.
+
+## Prerequisites
+
+* **Terraform** — `eks-platform` requires `>= 1.15.0` (uses S3 native state locking via `use_lockfile`, not a separate DynamoDB lock table); `oidc-roles` requires `>= 1.11.0`. CI pins `1.15.9` for both.
+* **AWS CLI**, configured with credentials for account `889867978066` (or your own account, with the variables below updated to match) if running Terraform locally instead of through GitHub Actions.
+* **IAM permissions** to create/destroy VPCs, EKS clusters and node groups, IAM roles/policies, S3 buckets, and the GitHub OIDC provider — broad enough that local runs are expected to use an admin-equivalent role; CI uses the narrower `github-actions-terraform` role instead.
+
+## State management
+
+Every stack's state lives in its own S3 bucket (see the table above), keyed by `<environment>/terraform.tfstate`. Locking is S3's own native lock support (`use_lockfile = true`, Terraform >= 1.11) rather than a separate DynamoDB table — one less resource to provision and pay for. State is never stored locally or committed; `.gitignore` excludes `*.tfstate*` outright as a second layer of protection even if someone forgets `-backend=false` during local testing.
 
 ## Workflows
 
 - **`tf-apply-eks.yaml`** (`workflow_dispatch`) — applies `eks-platform`, then checks out `recipes-gitops` and runs its `bootstrap.sh` against the new cluster (installs External Secrets Operator + Argo CD, points Argo CD at the GitOps repo). Re-running it against an already-bootstrapped cluster requires the `confirm_rebootstrap` input, since `bootstrap.sh` guards against that.
-- **`destroy-cluster.yaml`** (`workflow_dispatch`) — the reverse: connects to the cluster named by the `CLUSTER_NAME` variable, force-cascades and deletes every Argo CD Application (so any AWS load balancer they provisioned is torn down *before* Terraform tries to delete the VPC), then runs `terraform destroy` on `eks-platform`. Requires typing the exact `CLUSTER_NAME` value as confirmation.
-- **`eks-platform.yaml` / `oidc-roles.yaml` / `self-hosted-runner.yaml`** — CI only: `terraform fmt -check`, `init -backend=false`, `validate` on every push and on PRs touching that stack. No AWS credentials involved.
+- **`destroy-cluster.yaml`** (`workflow_dispatch`) — the reverse, and the more involved of the two: connects to the cluster named by the `CLUSTER_NAME` variable, disables auto-sync on every Argo CD Application and cascades their deletion (so any AWS load balancer or leftover `LoadBalancer` Service/Ingress they provisioned is torn down *before* Terraform tries to delete the VPC), then runs `terraform destroy` on `eks-platform`. Requires typing the exact `CLUSTER_NAME` value as confirmation. This automates the exact manual cleanup a stuck `terraform destroy` usually needs (orphaned ELBs/security groups blocking subnet deletion) instead of requiring it after the fact.
+- **`eks-platform.yaml` / `oidc-roles.yaml`** — CI only: `terraform fmt -check`, `init -backend=false`, `validate` on every push, and on PRs whose changed files fall under that stack's own directory. No AWS credentials involved.
 
 ## Required GitHub configuration
 
@@ -66,6 +123,32 @@ Each stack's `terraform.tfvars` is generated at CI time from `terraform.tfvars.t
 
 ## Running it
 
+**Through GitHub Actions (recommended path):**
+
 - **Deploy**: Actions → *Apply Terraform EKS Cluster* → Run workflow.
 - **Tear down**: Actions → *Destroy EKS Cluster* → Run workflow, typing the current `CLUSTER_NAME` value when prompted.
-- **Local validation**: `cd terraform/<stack> && terraform fmt -check && terraform init -backend=false && terraform validate` — the same checks CI runs, no AWS credentials needed.
+
+**Locally**, against a real account (requires AWS credentials and the variables above as environment variables, or a manually-written `terraform.tfvars`):
+
+```bash
+cd terraform/eks-platform    # or terraform/oidc-roles
+
+terraform init
+terraform plan
+terraform apply
+# ...when you're done for the day:
+terraform destroy
+```
+
+**Local validation only** (no AWS credentials needed — the same checks CI runs):
+
+```bash
+cd terraform/<stack>
+terraform fmt -check
+terraform init -backend=false
+terraform validate
+```
+
+## Cost
+
+This cluster is not meant to run continuously. `terraform apply` at the start of a work session, `terraform destroy` (or the `destroy-cluster.yaml` workflow) at the end of one — every day, and always over a weekend or break. Nothing in this repo assumes the cluster is always up; `tf-apply-eks.yaml`'s `confirm_rebootstrap` guard and `destroy-cluster.yaml`'s cluster-existence check are both written expecting the cluster to come and go repeatedly, not run once and stay up.
