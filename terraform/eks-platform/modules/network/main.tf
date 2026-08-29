@@ -18,7 +18,7 @@ locals {
 resource "aws_vpc" "this" {
   cidr_block           = var.vpc_cidrs
   enable_dns_hostnames = true
-   enable_dns_support   = true
+  enable_dns_support   = true
   tags = {
     Name = "${var.name_prefix}-VPC"
   }

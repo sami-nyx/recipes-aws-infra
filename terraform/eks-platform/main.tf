@@ -22,18 +22,18 @@ module "eks_core" {
   bootstrap_role_arn = var.bootstrap_role_arn
   region             = var.region
   nodes_in_public    = var.nodes_in_public
-  private_subnet_ids = module.network.privete_subnet_ids
+  private_subnet_ids = module.network.private_subnet_ids
   public_subnet_ids  = module.network.public_subnet_ids
   depends_on         = [module.network]
 }
 
-module "loki_storege" {
+module "loki_storage" {
   source            = "./modules/loki-storage"
   environment       = var.environment
   oidc_provider_arn = module.eks_core.oidc_provider_arn
 }
 module "cluster_roles" {
-  source            = "./modules/cluster-rloes"
+  source            = "./modules/cluster-roles"
   region            = var.region
   cluster_name      = module.eks_core.cluster_name
   name_prefix       = local.name_prefix

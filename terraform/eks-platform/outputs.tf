@@ -13,7 +13,7 @@ output "external_secrets_role_arn" {
   value = module.cluster_roles.external_secrets_role_arn
 }
 output "loki_irsa_role_arn" {
-  value = module.loki_storege.loki_irsa_role_arn
+  value = module.loki_storage.loki_irsa_role_arn
 }
 
 output "configure_kubectl" {

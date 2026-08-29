@@ -4,7 +4,7 @@
 
 resource "aws_iam_role" "cluster_role" {
 
-  name = "${var.name_prefix}-eks-cluster-roe"
+  name = "${var.name_prefix}-eks-cluster-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -54,7 +54,7 @@ resource "aws_eks_cluster" "this" {
   vpc_config {
     subnet_ids = var.nodes_in_public ? (
       var.public_subnet_ids
-    ) : (
+      ) : (
       concat(
         var.private_subnet_ids,
         var.public_subnet_ids
