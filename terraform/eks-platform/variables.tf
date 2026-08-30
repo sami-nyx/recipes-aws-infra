@@ -59,3 +59,8 @@ variable "bootstrap_role_arn" {
   type        = string
   description = "The secondary IAM role or user ARN used for cluster bootstrapping and administrative access."
 }
+
+variable "route53_zone_id" {
+  type        = string
+  description = "The hosted zone ID (e.g. \"Z0123456ABCDEF\") cert-manager's Route53 DNS-01 solver is scoped to - the zone itself is created manually, not by Terraform."
+}

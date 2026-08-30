@@ -207,6 +207,7 @@ jobs:
 
           PRINCIPAL_ARN: ${{ secrets.PRINCIPAL_ARN }}
           BOOTSTRAP_ARN: ${{ secrets.BOOTSTRAP_ARN }}
+          ROUTE53_ZONE_ID: ${{ vars.ROUTE53_ZONE_ID }}
 
         run: |
           envsubst < terraform.tfvars.template > terraform.tfvars

@@ -16,6 +16,10 @@ output "loki_irsa_role_arn" {
   value = module.loki_storage.loki_irsa_role_arn
 }
 
+output "cert_manager_route53_role_arn" {
+  value = module.cluster_roles.cert_manager_route53_role_arn
+}
+
 output "configure_kubectl" {
   value = "aws eks update-kubeconfig --region ${var.region} --name ${module.eks_core.cluster_name}"
 }
