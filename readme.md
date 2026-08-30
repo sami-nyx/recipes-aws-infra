@@ -37,7 +37,8 @@ The actual Kubernetes-side GitOps config (Argo CD Applications, Helm charts, man
      │   │        node_counts - min/desired/max)                  │   │
      │   │                    │                                   │   │
      │   │        coredns · kube-proxy · vpc-cni ·                 │   │
-     │   │        aws-ebs-csi-driver (IRSA)                         │   │
+     │   │        aws-ebs-csi-driver (IRSA) ·                        │   │
+     │   │        network-policy-agent (enforces NetworkPolicy)       │   │
      │   └────────────────────────────────────────────────────────┘   │
      │                                                                  │
      │   S3: Loki log storage (IRSA-scoped)                             │
@@ -80,6 +81,10 @@ Each stack's `terraform.tfvars` is generated at CI time from `terraform.tfvars.t
 ### Why custom modules instead of an off-the-shelf one
 
 `eks-platform` doesn't wrap a published community module (e.g. `terraform-aws-modules/eks/aws`) — the VPC, the EKS cluster, the node group, IAM roles, and access entries are all hand-written resources under `modules/network` and `modules/eks-core`. That was a deliberate choice to demonstrate module design directly rather than configuring someone else's abstraction — the trade-off is more code to own, in exchange for full visibility into exactly what every resource does and why.
+
+### NetworkPolicy enforcement
+
+The `vpc-cni` addon is configured with `enableNetworkPolicy = "true"`, which runs AWS's `network-policy-agent` DaemonSet on every node. This repo only provides that enforcement capability — without it, a `NetworkPolicy` manifest applies cleanly (the API server accepts it) but restricts nothing, since nothing is actually watching for it. The policies themselves (restricting which namespaces can reach Postgres, for example) are Kubernetes manifests, so they belong in and are defined by `recipes-gitops`, not here.
 
 ## Prerequisites
 
