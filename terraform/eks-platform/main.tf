@@ -38,4 +38,5 @@ module "cluster_roles" {
   cluster_name      = module.eks_core.cluster_name
   name_prefix       = local.name_prefix
   oidc_provider_arn = module.eks_core.oidc_provider_arn
+  route53_zone_id   = var.route53_zone_id
 }

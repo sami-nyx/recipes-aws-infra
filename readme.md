@@ -44,6 +44,8 @@ The actual Kubernetes-side GitOps config (Argo CD Applications, Helm charts, man
      │   S3: Loki log storage (IRSA-scoped)                             │
      │   S3: Terraform state (one bucket per stack, native locking)      │
      │   IAM: EKS Access Entries (API auth mode - no aws-auth ConfigMap)  │
+     │   IAM: cert-manager IRSA role (Route53 DNS-01, zone created         │
+     │        manually - not this repo's Terraform)                       │
      └──────────────────────────────────────────────────────────────────┘
                     │
                     ▼
@@ -73,7 +75,7 @@ Each stack is independent: its own S3 backend, its own state file, applied separ
 
 | Stack | Backend bucket | What it creates |
 |---|---|---|
-| `eks-platform` | `tf-state-bucket-eks-platform-recipes` | VPC/subnets (public-only or public+private+NAT, via `nodes_in_public`), the EKS cluster and managed node group, EKS Access Entries, IRSA roles for the EBS CSI driver and Loki, the Loki S3 bucket |
+| `eks-platform` | `tf-state-bucket-eks-platform-recipes` | VPC/subnets (public-only or public+private+NAT, via `nodes_in_public`), the EKS cluster and managed node group, EKS Access Entries, IRSA roles for the EBS CSI driver, Loki, and cert-manager's Route53 solver, the Loki S3 bucket |
 | `oidc-roles` | `tf-state-bucket-gh-actions-oidc-roles` | The GitHub Actions OIDC provider trust + IAM roles: `github-actions-terraform` (applies `eks-platform`), `github-actions-bootstrap` (runs `bootstrap.sh` against the cluster), plus per-repo push roles for ECR/S3/CloudFront |
 
 Each stack's `terraform.tfvars` is generated at CI time from `terraform.tfvars.template` via `envsubst`, populated from the GitHub variables/secrets listed below — it's never committed (see `.gitignore`).
@@ -116,6 +118,7 @@ Every stack's state lives in its own S3 bucket (see the table above), keyed by `
 | `NODE_MIN`, `NODE_DESIRED`, `NODE_MAX` | Node group scaling config |
 | `NODE_TYPE` | EC2 instance type for nodes |
 | `CLUSTER_NAME` | The live cluster's name (e.g. `sami-cluster`) — used only by `destroy-cluster.yaml` to reach the cluster and as its confirmation phrase, independent of any `terraform apply` output |
+| `ROUTE53_ZONE_ID` | Hosted zone ID cert-manager's Route53 DNS-01 solver is scoped to. The zone itself isn't managed by this repo - see "DNS: GoDaddy → Route53" below |
 
 **Secrets** (`secrets.*`):
 
@@ -153,6 +156,20 @@ terraform fmt -check
 terraform init -backend=false
 terraform validate
 ```
+
+## DNS: GoDaddy → Route53
+
+The domain was registered at GoDaddy, and DNS-01 certificate challenges went through a third-party `cert-manager-webhook-godaddy` chart authenticating with a GoDaddy API key. That's been replaced with cert-manager's native Route53 support - no third-party webhook, no long-lived API key, just IRSA like everything else in this project (`cluster_roles.cert_manager_route53_irsa_role`, above).
+
+The hosted zone itself is deliberately **not** Terraform-managed - this repo only owns cluster bootstrap and the IRSA roles workloads need, not DNS. Steps, in order:
+
+1. **Create the hosted zone manually** (AWS Console → Route53 → Create hosted zone, or `aws route53 create-hosted-zone --name <domain> --caller-reference <anything-unique>`). Note the Zone ID and the 4 assigned name servers.
+2. **Recreate every other record that currently exists at GoDaddy** in the new zone before cutting over - not just the one this cluster's Ingress needs. Nothing here can see GoDaddy's DNS panel; check it yourself for anything else pointed at this domain (email, other subdomains) and recreate those records too, or they break silently the moment nameservers flip.
+3. **Set `ROUTE53_ZONE_ID`** (the repo variable above) to the zone ID from step 1, then run `tf-apply-eks.yaml` (or apply locally) - this creates the cert-manager IRSA role scoped to that zone. Grab its ARN from `terraform output cert_manager_route53_role_arn`.
+4. **Fill in the two `REPLACE_ME` placeholders in `recipes-gitops`**: the role ARN from step 3 in `argocd/applications/platform/cert-manager.yaml`, and the zone ID from step 1 in `platform/cert-manager/cluster-issuer.yaml`. Argo CD applies both files as-is - it can't fill these in for you.
+5. **At GoDaddy** (registrar side, not code): log into the GoDaddy account, open DNS management for the domain, replace the nameservers with the 4 from step 1. This is **not** a domain transfer - the domain stays registered at GoDaddy, only who answers DNS queries for it changes. Lower the TTL on existing GoDaddy records a day ahead if possible, to speed convergence.
+6. **Verify before considering it done**: `dig NS <domain>` should eventually return the Route53 nameservers, not GoDaddy's. Propagation is usually fast but isn't instant - there's a real window where some resolvers still answer from GoDaddy.
+7. Once a certificate has actually renewed successfully through Route53, delete the old `godaddy-api-credentials` secret from AWS Secrets Manager - it's dead the moment the webhook's gone, no reason to leave a GoDaddy API key sitting there.
 
 ## Cost
 
