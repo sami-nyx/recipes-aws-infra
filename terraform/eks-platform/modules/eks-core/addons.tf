@@ -24,6 +24,16 @@ resource "aws_eks_addon" "vpc_cni" {
   addon_version               = "v1.23.0-eksbuild.1"
   resolve_conflicts_on_update = "PRESERVE"
 
+  # Prerequisite for enforcing Kubernetes NetworkPolicy at all - without
+  # this, NetworkPolicy manifests apply cleanly (the API server accepts
+  # them) but nothing actually enforces them, since VPC CNI's own
+  # network-policy-agent DaemonSet (which does the real eBPF-based
+  # enforcement on each node) only runs when this is enabled. Value is a
+  # string, not a bare boolean - that's the addon's config schema
+  # (confirmed via `aws eks describe-addon-configuration`), not a typo.
+  configuration_values = jsonencode({
+    enableNetworkPolicy = "true"
+  })
 }
 
 data "tls_certificate" "eks" {
