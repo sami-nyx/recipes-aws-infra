@@ -1,9 +1,8 @@
 name: EKS Platform Offline Testing
 on:
-  push:
-    branches:
-      - "**"
-
+  # PR-only, deliberately - every change reaching main goes through a PR,
+  # which is what actually validates it. No separate push trigger to keep
+  # in sync with that.
   pull_request:
     branches:
       - main
