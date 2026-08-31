@@ -149,6 +149,8 @@ terraform apply
 terraform destroy
 ```
 
+After a local `apply`, the cluster still isn't bootstrapped - `tf-apply-eks.yaml` does that as a second job, using `terraform apply`'s outputs. `./bootstrap_local.sh <path-to-local-recipes-gitops-clone>` does the same thing locally (reads `cluster_name`/`cluster_region`/`external_secrets_role_arn` via `terraform output` and runs `recipes-gitops/bootstrap/bootstrap.sh` with them), for when you'd rather not spend GitHub Actions minutes on it. It uses whatever AWS credentials are already active in your shell rather than assuming `github-actions-bootstrap` - fine as long as that identity is itself an EKS access entry principal, which `principal_arn` already is for a solo setup.
+
 **Local validation only** (no AWS credentials needed — the same checks CI runs):
 
 ```bash
