@@ -125,7 +125,8 @@ Every stack's state lives in its own S3 bucket (see the table above), keyed by `
 | Secret | Used for |
 |---|---|
 | `PRINCIPAL_ARN` | IAM principal granted cluster-admin EKS access |
-| `BOOTSTRAP_ARN` | The `github-actions-bootstrap` role ARN, also granted cluster-admin EKS access |
+| `BOOTSTRAP_ARN` | The `github-actions-bootstrap` role ARN - both the EKS access entry Terraform grants it, and the `role-to-assume` the bootstrap/drain jobs authenticate with |
+| `TERRAFORM_ROLE_ARN` | The `github-actions-terraform` role ARN - `role-to-assume` for every job that runs `terraform apply`/`destroy` |
 | `RECIPES_GITOPS_PAT` | Checks out the private `recipes-gitops` repo during bootstrap |
 | `SLACK_WEBHOOK_URL` | Deploy/destroy start/success/failure notifications |
 
