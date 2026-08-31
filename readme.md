@@ -149,6 +149,8 @@ terraform apply
 terraform destroy
 ```
 
+After a local `apply`, the cluster still isn't bootstrapped - `tf-apply-eks.yaml` does that as a second job, using `terraform apply`'s outputs. `recipes-gitops/bootstrap/bootstrap_local.sh` does the same thing locally, for when you'd rather not spend GitHub Actions minutes on it - see that repo's readme.
+
 **Local validation only** (no AWS credentials needed — the same checks CI runs):
 
 ```bash
