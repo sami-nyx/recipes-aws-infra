@@ -18,7 +18,14 @@ resource "aws_iam_policy" "external_secrets_policy" {
         ]
         Resource = [
           "arn:aws:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:prod/recipes/api-keys-*",
-          "arn:aws:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:recipes-gitops-pat*"
+          "arn:aws:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:recipes-gitops-pat*",
+          # Alertmanager's Slack receiver. A separate secret from the
+          # SLACK_WEBHOOK_URL GitHub Actions secret CI already uses -
+          # not readable from inside the cluster regardless (GitHub
+          # secrets are write-only, even to us), and kept structurally
+          # independent even though the value starts out identical, so
+          # either one can change without touching the other.
+          "arn:aws:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:recipes-alertmanager-slack-webhook*"
         ]
       }
     ]
