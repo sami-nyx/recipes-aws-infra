@@ -49,6 +49,7 @@ jobs:
       cluster_name: ${{ steps.terraform-outputs.outputs.cluster_name }}
       cluster_region: ${{ steps.terraform-outputs.outputs.cluster_region }}
       external_secrets_role_arn: ${{ steps.terraform-outputs.outputs.external_secrets_role_arn }}
+      cert_manager_route53_role_arn: ${{ steps.terraform-outputs.outputs.cert_manager_route53_role_arn }}
 
     steps:
 
@@ -117,7 +118,73 @@ jobs:
             echo "cluster_name=$(terraform output -raw cluster_name)"
             echo "cluster_region=$(terraform output -raw cluster_region)"
             echo "external_secrets_role_arn=$(terraform output -raw external_secrets_role_arn)"
+            echo "cert_manager_route53_role_arn=$(terraform output -raw cert_manager_route53_role_arn)"
           } >> "$GITHUB_OUTPUT"
+
+  sync-cert-issuer-config:
+    name: Sync Route53 zone ID + cert-manager role ARN to recipes-gitops
+    runs-on: ubuntu-22.04
+    needs: terraform-apply
+    environment: staging
+
+    # Writes straight to recipes-gitops's main - deliberately, not a
+    # PR. Neither value is sensitive (see recipes-gitops's readme.md):
+    # a Route53 hosted zone ID and an IAM role ARN are resource
+    # identifiers, not credentials - knowing either grants no access on
+    # its own. This repo's PAT already reaches into recipes-gitops
+    # (bootstrap-cluster, below, already checks it out); this job needs
+    # that same PAT to also have write access, since it's the one thing
+    # in this pipeline that actually knows these two values without a
+    # human retyping them every apply cycle (the role ARN gets a new
+    # random IAM name_prefix suffix every apply, not just once).
+    permissions:
+      contents: read
+
+    steps:
+
+      - name: Checkout GitOps repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: sami-nyx/recipes-gitops
+          token: ${{ secrets.RECIPES_GITOPS_PAT }}
+          path: gitops
+
+      - name: Install yq
+        run: |
+          curl -sL https://github.com/mikefarah/yq/releases/download/v4.53.3/yq_linux_amd64 -o /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
+
+      - name: Inject Route53 zone ID, region, email, and cert-manager role ARN
+        working-directory: ./gitops
+        env:
+          ROUTE53_ZONE_ID: ${{ vars.ROUTE53_ZONE_ID }}
+          REGION: ${{ vars.REGION }}
+          EMAIL: ${{ vars.EMAIL }}
+          CERT_MANAGER_ROUTE53_ROLE_ARN: ${{ needs.terraform-apply.outputs.cert_manager_route53_role_arn }}
+        run: |
+          yq eval '.route53ZoneId = strenv(ROUTE53_ZONE_ID) | .region = strenv(REGION) | .email = strenv(EMAIL)' -i apps/cert-issuer/values.yaml
+          yq eval '.spec.source.helm.values |= (from_yaml | .serviceAccount.annotations["eks.amazonaws.com/role-arn"] = strenv(CERT_MANAGER_ROUTE53_ROLE_ARN) | to_yaml)' -i argocd/applications/platform/cert-manager.yaml
+
+      - name: Commit and push if changed
+        working-directory: ./gitops
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet; then
+            echo "No changes - values already up to date."
+            exit 0
+          fi
+
+          git add apps/cert-issuer/values.yaml argocd/applications/platform/cert-manager.yaml
+          git commit -m "chore: sync Route53 zone ID + cert-manager role ARN from terraform apply
+
+          Automated - recipes-aws-infra's tf-apply-eks.yaml, run ${{ github.run_id }}.
+          Neither value is sensitive (see this repo's readme.md) - the
+          role ARN changes on every apply (random IAM name_prefix
+          suffix), the zone ID is stable but kept in sync from the same
+          source of truth regardless."
+          git push
 
   bootstrap-cluster:
     name: Bootstrap Kubernetes Platform
@@ -172,6 +239,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs:
       - terraform-apply
+      - sync-cert-issuer-config
       - bootstrap-cluster
     if: ${{ success() }}
     environment: staging
@@ -198,6 +266,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs:
       - terraform-apply
+      - sync-cert-issuer-config
       - bootstrap-cluster
     if: ${{ failure() }}
     environment: staging
