@@ -64,3 +64,8 @@ variable "route53_zone_id" {
   type        = string
   description = "The hosted zone ID (e.g. \"Z0123456ABCDEF\") cert-manager's Route53 DNS-01 solver is scoped to - the zone itself is created manually, not by Terraform."
 }
+
+variable "cloudfront_distribution_id" {
+  type        = string
+  description = "The CloudFront distribution ID the cloudfront-sync IRSA role is scoped to - the distribution itself is created manually, not by Terraform."
+}

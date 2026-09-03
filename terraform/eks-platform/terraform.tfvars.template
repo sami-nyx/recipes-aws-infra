@@ -18,8 +18,9 @@ node_counts = {
   max     = ${NODE_MAX}
 }
 
-node_type          = "${NODE_TYPE}"
-environment        = "${ENVIRONMENT}"
-principal_arn      = "${PRINCIPAL_ARN}"
-bootstrap_role_arn = "${BOOTSTRAP_ARN}"
-route53_zone_id    = "${ROUTE53_ZONE_ID}"
+node_type                  = "${NODE_TYPE}"
+environment                = "${ENVIRONMENT}"
+principal_arn              = "${PRINCIPAL_ARN}"
+bootstrap_role_arn         = "${BOOTSTRAP_ARN}"
+route53_zone_id            = "${ROUTE53_ZONE_ID}"
+cloudfront_distribution_id = "${CLOUDFRONT_DISTRIBUTION_ID}"
