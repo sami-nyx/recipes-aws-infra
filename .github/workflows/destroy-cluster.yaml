@@ -125,11 +125,23 @@ jobs:
 
           # 3. Delete everything and wait for the cascade (and the AWS load
           #    balancer controller tearing down the actual ELB/NLB + ENIs
-          #    behind any LoadBalancer Service/Ingress) to finish. This has
-          #    to happen before terraform destroy - otherwise a load balancer
-          #    still sitting in the VPC will block subnet/security-group
-          #    deletion.
-          kubectl delete applications.argoproj.io --all -n argocd --wait=true --timeout=10m
+          #    behind any LoadBalancer Service/Ingress) to finish - ideally.
+          #    Best effort, not required to succeed: all Applications here
+          #    get cascaded in one flat batch, regardless of sync-wave,
+          #    funneling through the single argocd-application-controller
+          #    replica, so one Application slow to tear down (its own
+          #    controller mid-reconcile, a slow AWS API call...) can eat
+          #    the whole timeout. That must not fail this step - `set -e`
+          #    would then abort the job outright, skipping the LoadBalancer
+          #    cleanup below and blocking terraform-destroy (needs:
+          #    drain-cluster) from ever running, over one stuck Application.
+          #    A leftover Application object is cosmetic - the whole
+          #    cluster is destroyed a few minutes later regardless - the
+          #    only things that actually have to be gone first are the
+          #    ELBs/ENIs, which the next step checks independently.
+          if ! kubectl delete applications.argoproj.io --all -n argocd --wait=true --timeout=10m; then
+            echo "::warning::Not every Argo CD Application finished cascading within 10m - continuing anyway, since the whole cluster is about to be destroyed. Checking for lingering LoadBalancers next, which is what actually has to be clear before terraform destroy."
+          fi
 
       - name: Delete any remaining LoadBalancer-backed resources
         if: steps.check-cluster.outputs.found == 'true'
