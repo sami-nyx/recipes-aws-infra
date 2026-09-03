@@ -249,7 +249,24 @@ jobs:
   bootstrap-cluster:
     name: Bootstrap Kubernetes Platform
     runs-on: ubuntu-24.04
-    needs: terraform-apply
+    # Must wait for both sync-*-config jobs, not just terraform-apply -
+    # this is what applies root-app.yaml, and Argo CD starts syncing
+    # every Application (cert-manager, cloudfront-sync, ...) against
+    # whatever is on recipes-gitops's main branch at that exact moment.
+    # Racing ahead of the sync jobs bakes their still-unsynced
+    # REPLACE_ME_* placeholders into IRSA env vars at pod-admission time
+    # (the pod-identity webhook only injects once, at admission - a
+    # ServiceAccount annotation corrected afterward doesn't retroactively
+    # fix an already-running pod), which is exactly what broke
+    # cert-manager's Route53 DNS-01 solver on a real run: the role ARN
+    # wasn't synced yet when cert-manager's pod was created, so every
+    # DNS-01 call failed with STS: "Request ARN is invalid" - nginx-ingress
+    # served its self-signed fallback cert, and CloudFront's origin TLS
+    # handshake failed with a 502 for as long as the cluster lived.
+    needs:
+      - terraform-apply
+      - sync-cert-issuer-config
+      - sync-cloudfront-config
     environment: staging
 
     permissions:
