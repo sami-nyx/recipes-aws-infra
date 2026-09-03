@@ -50,6 +50,7 @@ jobs:
       cluster_region: ${{ steps.terraform-outputs.outputs.cluster_region }}
       external_secrets_role_arn: ${{ steps.terraform-outputs.outputs.external_secrets_role_arn }}
       cert_manager_route53_role_arn: ${{ steps.terraform-outputs.outputs.cert_manager_route53_role_arn }}
+      cloudfront_sync_role_arn: ${{ steps.terraform-outputs.outputs.cloudfront_sync_role_arn }}
 
     steps:
 
@@ -90,6 +91,7 @@ jobs:
           PRINCIPAL_ARN: ${{ secrets.PRINCIPAL_ARN }}
           BOOTSTRAP_ARN: ${{ secrets.BOOTSTRAP_ARN }}
           ROUTE53_ZONE_ID: ${{ vars.ROUTE53_ZONE_ID }}
+          CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
 
         run: |
           envsubst < terraform.tfvars.template > terraform.tfvars
@@ -119,6 +121,7 @@ jobs:
             echo "cluster_region=$(terraform output -raw cluster_region)"
             echo "external_secrets_role_arn=$(terraform output -raw external_secrets_role_arn)"
             echo "cert_manager_route53_role_arn=$(terraform output -raw cert_manager_route53_role_arn)"
+            echo "cloudfront_sync_role_arn=$(terraform output -raw cloudfront_sync_role_arn)"
           } >> "$GITHUB_OUTPUT"
 
   sync-cert-issuer-config:
@@ -186,6 +189,63 @@ jobs:
           source of truth regardless."
           git push
 
+  sync-cloudfront-config:
+    name: Sync CloudFront distribution ID + cloudfront-sync role ARN to recipes-gitops
+    runs-on: ubuntu-22.04
+    needs: terraform-apply
+    environment: staging
+
+    # Same reasoning as sync-cert-issuer-config above: neither value is
+    # sensitive (a CloudFront distribution ID and an IAM role ARN are
+    # resource identifiers, not credentials), and the role ARN gets a
+    # new random IAM name_prefix suffix every apply - not a one-time
+    # value a human could just type in once and forget.
+    permissions:
+      contents: read
+
+    steps:
+
+      - name: Checkout GitOps repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: sami-nyx/recipes-gitops
+          token: ${{ secrets.RECIPES_GITOPS_PAT }}
+          path: gitops
+
+      - name: Install yq
+        run: |
+          curl -sL https://github.com/mikefarah/yq/releases/download/v4.53.3/yq_linux_amd64 -o /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
+
+      - name: Inject CloudFront distribution ID and cloudfront-sync role ARN
+        working-directory: ./gitops
+        env:
+          CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+          CLOUDFRONT_SYNC_ROLE_ARN: ${{ needs.terraform-apply.outputs.cloudfront_sync_role_arn }}
+        run: |
+          yq eval '.distributionId = strenv(CLOUDFRONT_DISTRIBUTION_ID) | .roleArn = strenv(CLOUDFRONT_SYNC_ROLE_ARN)' -i apps/cloudfront-sync/values.yaml
+
+      - name: Commit and push if changed
+        working-directory: ./gitops
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet; then
+            echo "No changes - values already up to date."
+            exit 0
+          fi
+
+          git add apps/cloudfront-sync/values.yaml
+          git commit -m "chore: sync CloudFront distribution ID + cloudfront-sync role ARN from terraform apply
+
+          Automated - recipes-aws-infra's tf-apply-eks.yaml, run ${{ github.run_id }}.
+          Neither value is sensitive (see this repo's readme.md) - the
+          role ARN changes on every apply (random IAM name_prefix
+          suffix), the distribution ID is stable but kept in sync from
+          the same source of truth regardless."
+          git push
+
   bootstrap-cluster:
     name: Bootstrap Kubernetes Platform
     runs-on: ubuntu-24.04
@@ -240,6 +300,7 @@ jobs:
     needs:
       - terraform-apply
       - sync-cert-issuer-config
+      - sync-cloudfront-config
       - bootstrap-cluster
     if: ${{ success() }}
     environment: staging
@@ -267,6 +328,7 @@ jobs:
     needs:
       - terraform-apply
       - sync-cert-issuer-config
+      - sync-cloudfront-config
       - bootstrap-cluster
     if: ${{ failure() }}
     environment: staging
