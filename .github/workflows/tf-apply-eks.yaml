@@ -192,7 +192,15 @@ jobs:
   sync-cloudfront-config:
     name: Sync CloudFront distribution ID + cloudfront-sync role ARN to recipes-gitops
     runs-on: ubuntu-22.04
-    needs: terraform-apply
+    # Sequenced after sync-cert-issuer-config, not parallel with it -
+    # both jobs check out recipes-gitops independently and push straight
+    # to its main. Running them at the same time meant whichever pushed
+    # second got a non-fast-forward rejection ("cannot lock ref ... is
+    # at X but expected Y"), since its checkout was already behind by
+    # the time it tried to push.
+    needs:
+      - terraform-apply
+      - sync-cert-issuer-config
     environment: staging
 
     # Same reasoning as sync-cert-issuer-config above: neither value is
